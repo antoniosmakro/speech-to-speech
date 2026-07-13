@@ -30,11 +30,10 @@
  *    color; ~12 % matches its tinted fill).
  */
 
-/** Pinned renderer library + avatar asset. Overridable via localStorage for
- *  local development (`s2s.avatar.libUrl`, `s2s.avatar.assetUrl`). */
-const LIB_URL_DEFAULT =
+/** Pinned renderer library + avatar asset (jsDelivr, versioned). */
+const LIB_URL =
   "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@1.15.0/dist/avatar-chat-widget.umd.js";
-const ASSET_URL_DEFAULT =
+const ASSET_URL =
   "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@1.15.0/public/asset/nyx.zip";
 
 const SAMPLE_RATE = 16000;
@@ -181,18 +180,16 @@ class AvatarOrb {
 
   async _load() {
     if (this._controller || this._libPromise) return this._libPromise;
-    const libUrl = store.get("s2s.avatar.libUrl", LIB_URL_DEFAULT);
-    const assetUrl = store.get("s2s.avatar.assetUrl", ASSET_URL_DEFAULT);
     this._libPromise = new Promise((resolve) => {
       const script = document.createElement("script");
-      script.src = libUrl;
+      script.src = LIB_URL;
       script.onload = () => {
         try {
           const ns = /** @type {any} */ (window).AvatarChat;
           const api = ns?.AvatarChat ?? ns; // UMD named-exports vs global
           this._controller = api.mountAvatar({
             container: "#avatar-stage",
-            avatarUrl: assetUrl,
+            avatarUrl: ASSET_URL,
             backgroundColor: SCENE_BASE,
             onError: (err) => console.warn("[avatar] renderer failed:", err),
           });
