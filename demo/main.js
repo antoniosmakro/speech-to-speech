@@ -22,7 +22,7 @@ import { ChatView } from "./ui/chat.js";
 import { Account } from "./ui/account.js";
 import { avatarOrb } from "./ws/avatar.js";
 
-const DEFAULT_VOICE = "Aiden";
+const DEFAULT_VOICE = "bm_fable";
 const DEFAULT_INSTRUCTIONS =
   "You are a friendly voice assistant. " +
   "Keep replies short, warm, and spoken. Avoid long monologues.";

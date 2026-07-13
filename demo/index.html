@@ -267,15 +267,14 @@
               <label class="field">
                 <span>Voice</span>
                 <select id="voice">
-                  <option value="Aiden" selected>Aiden</option>
-                  <option value="Ryan">Ryan</option>
-                  <option value="Dylan">Dylan</option>
-                  <option value="Eric">Eric</option>
-                  <option value="Ono_Anna">Ono_Anna</option>
-                  <option value="Serena">Serena</option>
-                  <option value="Sohee">Sohee</option>
-                  <option value="Uncle_Fu">Uncle_Fu</option>
-                  <option value="Vivian">Vivian</option>
+                  <!-- Kokoro voice ids — this deployment's backend runs
+                       Kokoro-82M TTS (CPU) instead of Qwen3-TTS. -->
+                  <option value="bm_fable" selected>Fable (UK male)</option>
+                  <option value="bm_george">George (UK male)</option>
+                  <option value="bf_emma">Emma (UK female)</option>
+                  <option value="af_heart">Heart (US female)</option>
+                  <option value="af_bella">Bella (US female)</option>
+                  <option value="am_michael">Michael (US male)</option>
                 </select>
               </label>
             </div>
