@@ -1,12 +1,12 @@
 ---
-title: HF Realtime Voice
+title: HF Realtime Voice + Avatar
 emoji: 🎙️
 colorFrom: indigo
 colorTo: purple
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Voice chat over WebSocket against a HF speech-to-speech
+short_description: Voice chat with a lip-synced 3D avatar, open s2s stack
 hf_oauth: true
 ---
 

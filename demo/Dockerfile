@@ -1,25 +1,43 @@
-# Single container: serves the static front-end AND the /api/search proxy.
-# HF Spaces (sdk: docker) routes traffic to $PORT, default 7860.
+# Single-container deployment: the demo app AND the speech-to-speech pipeline
+# (CPU) in one image, sized for an HF Space on the cpu-upgrade tier. HF Spaces
+# (sdk: docker) route traffic to $PORT, default 7860; the pipeline runs
+# internally on 8765 behind the same-origin /v1/realtime passthrough.
 FROM python:3.11-slim
+
+# libsndfile for librosa/soundfile, libportaudio for the sounddevice import,
+# libgomp for onnxruntime/ggml.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libsndfile1 libportaudio2 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# CPU-only torch first (the default index pulls multi-GB CUDA builds), then
+# the CPU build of the Qwen3-TTS GGML runtime (unused at runtime — Kokoro is
+# the TTS — but required to satisfy speech-to-speech's dependency set), then
+# the pipeline itself and the demo requirements.
+RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir "qwentts-cpp-python @ https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu/qwentts_cpp_python-0.3.0%2Bcpu-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl" \
+    && pip install --no-cache-dir "speech-to-speech[kokoro]" \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Wav2Arkit lip-sync for the avatar (audio -> 52 ARKit blendshapes, ONNX CPU).
-# The module is fetched from myned-ai/avatar-chat-server (MIT) at a pinned ref
-# — linked, not copied — and the model weights are baked into the image so the
-# Space boots warm. See lipsync.py for the route it powers.
-ARG WAV2ARKIT_REF=6229737de9cb4766dda4854b447fe4fb97835472
-ADD https://github.com/myned-ai/avatar-chat-server/archive/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
+# Wav2Arkit lip-sync module (myned-ai/avatar-chat-server, MIT) at a pinned ref
+# — linked, not copied — plus all models baked in so the Space boots warm:
+# wav2arkit (lip-sync), Parakeet (STT), Kokoro (TTS).
+ARG WAV2ARKIT_REF=feat/wav2arkit-standalone
+ADD https://github.com/myned-ai/avatar-chat-server/archive/refs/heads/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
 RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
     && cp -r /tmp/avatar-chat-server-*/src/wav2arkit /app/wav2arkit \
     && rm -rf /tmp/acs.tar.gz /tmp/avatar-chat-server-* \
-    && python -c "from huggingface_hub import snapshot_download; snapshot_download('myned-ai/wav2arkit_cpu', local_dir='pretrained_models')"
+    && python -c "from huggingface_hub import snapshot_download; \
+        snapshot_download('myned-ai/wav2arkit_cpu', local_dir='pretrained_models'); \
+        snapshot_download('nvidia/parakeet-tdt-0.6b-v3'); \
+        snapshot_download('hexgrad/Kokoro-82M')"
 
 COPY . .
+RUN chmod +x start.sh
 
 EXPOSE 7860
 
-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["./start.sh"]

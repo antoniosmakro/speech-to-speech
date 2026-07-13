@@ -53,6 +53,7 @@ from pydantic import BaseModel
 import auth
 import limiter
 import lipsync
+import s2sproxy
 
 logger = logging.getLogger("s2s.search")
 
@@ -91,6 +92,8 @@ AUTH_ENABLED = LIMITER_ENABLED and auth.attach(app)
 
 # Wav2Arkit lip-sync for the Nyx avatar: /api/wav2arkit (see lipsync.py).
 app.include_router(lipsync.router)
+# Single-container deploys: same-origin /v1/realtime passthrough (s2sproxy.py).
+app.include_router(s2sproxy.router)
 
 
 @app.on_event("startup")
