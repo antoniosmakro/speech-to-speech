@@ -7,7 +7,7 @@ FROM python:3.11-slim
 # libsndfile for librosa/soundfile, libportaudio for the sounddevice import,
 # libgomp for onnxruntime/ggml.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libsndfile1 libportaudio2 libgomp1 \
+        git libsndfile1 libportaudio2 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -17,9 +17,12 @@ COPY requirements.txt .
 # the CPU build of the Qwen3-TTS GGML runtime (unused at runtime — Kokoro is
 # the TTS — but required to satisfy speech-to-speech's dependency set), then
 # the pipeline itself and the demo requirements.
+# Pipeline from source at the commit this branch is based on (the PyPI
+# release lags the repo — it lacks the chat-completions backend).
+ARG S2S_REF=eb4d0387dcc4b8f34220797fd00591850eacc52c
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir "qwentts-cpp-python @ https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu/qwentts_cpp_python-0.3.0%2Bcpu-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl" \
-    && pip install --no-cache-dir "speech-to-speech[kokoro]" \
+    && pip install --no-cache-dir "speech-to-speech[kokoro] @ git+https://github.com/huggingface/speech-to-speech.git@${S2S_REF}" \
     && pip install --no-cache-dir -r requirements.txt
 
 # Wav2Arkit lip-sync module (myned-ai/avatar-chat-server, MIT) at a pinned ref
