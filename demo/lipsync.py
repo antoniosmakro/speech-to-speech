@@ -41,6 +41,9 @@ router = APIRouter()
 MODEL_REPO = "myned-ai/wav2arkit_cpu"
 MODEL_DIR = os.environ.get("WAV2ARKIT_DIR", "./pretrained_models")
 MODEL_PATH = os.path.join(MODEL_DIR, "wav2arkit_cpu.onnx")
+# ONNX intra-op thread cap (0 = ONNX default). The model runs 12.8x realtime
+# on 2 threads; an unbounded pool starves co-located inference.
+THREADS = int(os.environ.get("WAV2ARKIT_THREADS", "2"))
 SAMPLE_RATE = 16000
 FPS = 30
 # 300 ms per inference call — a multiple of the 533.33-samples-per-frame
@@ -61,7 +64,12 @@ def _load_engine():
 
         logger.info("Downloading %s to %s ...", MODEL_REPO, MODEL_DIR)
         snapshot_download(MODEL_REPO, local_dir=MODEL_DIR)
-    return Wav2ArkitInference(model_path=MODEL_PATH, audio_sr=SAMPLE_RATE, fps=FPS)
+    return Wav2ArkitInference(
+        model_path=MODEL_PATH,
+        audio_sr=SAMPLE_RATE,
+        fps=FPS,
+        intra_op_threads=THREADS or None,
+    )
 
 
 async def get_engine():
