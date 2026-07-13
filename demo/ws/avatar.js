@@ -33,9 +33,9 @@
 /** Pinned renderer library + avatar asset. Overridable via localStorage for
  *  local development (`s2s.avatar.libUrl`, `s2s.avatar.assetUrl`). */
 const LIB_URL_DEFAULT =
-  "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@0.15.0/dist/avatar-chat-widget.umd.js";
+  "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@1.15.0/dist/avatar-chat-widget.umd.js";
 const ASSET_URL_DEFAULT =
-  "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@0.15.0/public/asset/nyx.zip";
+  "https://cdn.jsdelivr.net/npm/@myned-ai/avatar-chat-widget@1.15.0/public/asset/nyx.zip";
 
 const SAMPLE_RATE = 16000;
 const FPS = 30;
