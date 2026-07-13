@@ -16,6 +16,10 @@ export OMP_NUM_THREADS="$TORCH_THREADS" MKL_NUM_THREADS="$TORCH_THREADS" OPENBLA
 # wav2arkit ONNX cap (lipsync.py reads it; 12.8x realtime on 2 threads).
 : "${WAV2ARKIT_THREADS:=2}"
 export WAV2ARKIT_THREADS
+# Sentences per TTS batch. Upstream default (3) holds short replies until the
+# LLM finishes entirely — the avatar can't start speaking. 1 = speak after the
+# first sentence.
+: "${STREAM_BATCH_SENTENCES:=1}"
 # Live user captions cost periodic STT bursts while speaking; 0 to disable.
 : "${LIVE_TRANSCRIPTION:=1}"
 LIVE_FLAG=""
@@ -35,6 +39,7 @@ speech-to-speech \
   --responses_api_base_url "$LLM_BASE_URL" \
   --responses_api_api_key "$HF_TOKEN" \
   --responses_api_stream \
+  --stream_batch_sentences "$STREAM_BATCH_SENTENCES" \
   $LIVE_FLAG \
   --num_pipelines "$NUM_PIPELINES" \
   &
