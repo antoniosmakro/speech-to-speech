@@ -40,10 +40,11 @@ const ASSET_URL_DEFAULT =
 const SAMPLE_RATE = 16000;
 const FPS = 30;
 const SAMPLES_PER_FRAME = SAMPLE_RATE / FPS; // 533.33
-/** Scene backdrop: state color mixed into the page dark at this strength —
- *  the orb core's own fill is a 5-28 % tint, never the full color. */
-const SCENE_TINT = 0.12;
-const PAGE_DARK = "#0a0b10";
+/** The avatar's 3D scene backdrop: the page's stage-backdrop color where the
+ *  orb sits. Constant — all state coloring comes from the .avatar-shade
+ *  overlay, which carries the orb core's exact --glow-keyed gradient and
+ *  inset shadow, so colors/shadows match the stock orb by construction. */
+const SCENE_BASE = "#14161f";
 /** Lip-sync timing trim, ms. Positive delays the mouth (frames apply later).
  *  Tunable via localStorage `s2s.avatar.offsetMs` while calibrating. */
 const OFFSET_MS_DEFAULT = 40;
@@ -64,13 +65,6 @@ const LIVE_STATES = new Set(["listening", "user-speaking", "processing", "ai-spe
 const store = {
   get: (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
 };
-
-function mixToward(hexA, hexB, f) {
-  const a = parseInt(hexA.slice(1), 16);
-  const b = parseInt(hexB.slice(1), 16);
-  const ch = (s) => Math.round((((a >> s) & 255) * (1 - f)) + (((b >> s) & 255) * f));
-  return `#${[16, 8, 0].map((s) => ch(s).toString(16).padStart(2, "0")).join("")}`;
-}
 
 function base64FromInt16(int16) {
   let binary = "";
@@ -176,25 +170,13 @@ class AvatarOrb {
     this._appState = state;
     if (!this.active) return;
     this._setLive(LIVE_STATES.has(state));
-    if (this._controller) {
-      this._controller.setChatState(CHAT_STATE[state] ?? "Idle", "avatar-orb");
-      this._tintScene();
-    }
+    this._controller?.setChatState(CHAT_STATE[state] ?? "Idle", "avatar-orb");
   }
 
   // ── Reveal ────────────────────────────────────────────────────────────────
 
   _setLive(live) {
     document.getElementById("main-circle")?.classList.toggle("avatar-live", !!live);
-  }
-
-  _tintScene() {
-    const circle = document.getElementById("main-circle");
-    if (!circle || !this._controller) return;
-    const glow = getComputedStyle(circle).getPropertyValue("--glow").trim();
-    if (/^#[0-9a-f]{6}$/i.test(glow)) {
-      this._controller.setBackgroundColor(mixToward(PAGE_DARK, glow, SCENE_TINT));
-    }
   }
 
   async _load() {
@@ -211,7 +193,7 @@ class AvatarOrb {
           this._controller = api.mountAvatar({
             container: "#avatar-stage",
             avatarUrl: assetUrl,
-            backgroundColor: mixToward(PAGE_DARK, "#8b7dff", SCENE_TINT),
+            backgroundColor: SCENE_BASE,
             onError: (err) => console.warn("[avatar] renderer failed:", err),
           });
           this.onAppState(this._appState); // apply current state + tint
