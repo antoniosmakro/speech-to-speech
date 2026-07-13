@@ -2644,3 +2644,59 @@ body.cam-on .footer {
   .footer { display: none; }
   .circle { width: clamp(120px, min(50vw, 46vh), 240px); }
 }
+
+/* ─── Nyx avatar mode (ws/avatar.js) ─────────────────────────────────────
+ * When a conversation is live and the avatar setting is on, `.avatar-live`
+ * is set on `.circle`: the 3D renderer shows inside the core, cropped to the
+ * circle, while every existing layer (glow halo, rings, state colors, the
+ * audio-reactive vars) keeps running around it. The renderer's own scene
+ * backdrop is repainted by ws/avatar.js with the state's --glow mixed into
+ * the page dark, so inside and outside tell one color story. Toggle off (or
+ * no conversation) -> everything here is display:none and the orb is stock. */
+
+.circle { --avatar-zoom: 1.75; }
+
+.circle .avatar-stage {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  /* The renderer frames head+shoulders with generous padding; zoom in and
+   * bias toward the face. The core's overflow crops the rest. */
+  transform: scale(var(--avatar-zoom));
+  transform-origin: 50% 58%;
+  display: none;
+}
+
+/* Interior depth in FRONT of the opaque canvas: transparent centre keeps the
+ * face clean; the edge vignette + inset glow reproduce the core's own
+ * shading (its gradient/box-shadow sit behind the canvas, covered). */
+.circle .avatar-shade {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10;
+  display: none;
+  background: radial-gradient(circle at 35% 28%, transparent 55%, color-mix(in srgb, var(--glow, var(--accent)) 14%, transparent) 100%);
+  box-shadow: inset 0 0 28px color-mix(in srgb, var(--glow, var(--accent)) 18%, transparent);
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+
+.circle.avatar-live .circle-core { overflow: hidden; }
+.circle.avatar-live .avatar-stage { display: block; }
+.circle.avatar-live .avatar-shade { display: block; }
+
+/* Indicators drop to the lower third, in front of her, in a quiet pill —
+ * same elements, same state-driven visibility as the stock orb. */
+.circle.avatar-live .circle-indicator {
+  position: absolute;
+  left: 50%;
+  bottom: 5%;
+  transform: translateX(-50%);
+  width: 24%;
+  height: 24%;
+  z-index: 12;
+  background: rgba(10, 11, 16, 0.45);
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+}

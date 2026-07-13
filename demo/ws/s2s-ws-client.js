@@ -567,6 +567,14 @@ export class S2sWsRealtimeClient extends EventTarget {
       // ended cleanly (a response.done usually arrives just before/after
       // this). We let the state machine fall back to "connected" via the
       // response.done event handler.
+    } else if (data?.kind === "stats") {
+      // Playback progress for listeners that sync visuals to what the user
+      // actually hears (e.g. avatar lip-sync). queuedMs is source-domain.
+      this.dispatchEvent(
+        new CustomEvent("playback-stats", {
+          detail: { queuedMs: data.queuedMs ?? 0, played: data.played ?? 0 },
+        }),
+      );
     }
   }
 
@@ -862,6 +870,10 @@ export class S2sWsRealtimeClient extends EventTarget {
       const s = view.getInt16(i * 2, true);
       samples[i] = s < 0 ? s / 0x8000 : s / 0x7fff;
     }
+    // Tap for listeners that consume the assistant's audio (e.g. avatar
+    // lip-sync). dispatchEvent is synchronous, so listeners read `samples`
+    // before the buffer is transferred to the worklet below.
+    this.dispatchEvent(new CustomEvent("assistant-audio", { detail: { samples } }));
     this._playbackNode.port.postMessage({ kind: "audio", samples }, [samples.buffer]);
   }
 

@@ -20,6 +20,7 @@ import { S2sWsRealtimeClient } from "./ws/s2s-ws-client.js";
 import { $, truncateError, DEBUG } from "./ui/dom.js";
 import { ChatView } from "./ui/chat.js";
 import { Account } from "./ui/account.js";
+import { avatarOrb } from "./ws/avatar.js";
 
 const DEFAULT_VOICE = "Aiden";
 const DEFAULT_INSTRUCTIONS =
@@ -44,6 +45,7 @@ const STORAGE_KEYS = {
   tools: "s2s.ws.tools",
   searchKey: "s2s.ws.searchKey",
   noiseGate: "s2s.ws.noiseGate",
+  avatar: "s2s.ws.avatar",
 };
 
 // ── Noise gate ──────────────────────────────────────────────────────────────
@@ -242,6 +244,8 @@ const inputVoice = $("#voice");
 const inputInstructions = $("#instructions");
 /** @type {HTMLInputElement} */
 const inputNoiseGate = $("#noise-gate");
+/** @type {HTMLInputElement} */
+const avatarToggle = $("#avatar-toggle");
 /** @type {HTMLElement} */
 const gateValue = $("#gate-value");
 /** @type {HTMLElement} */
@@ -280,6 +284,16 @@ let allowDirect = true;
 // Deploy-pinned s2s URL (SPEECH_TO_SPEECH_URL). Non-empty -> locked direct
 // mode: the field displays it read-only and the saved user URL is untouched.
 let pinnedUrl = "";
+
+// ── Avatar setting ──────────────────────────────────────────────────────────
+// Persisted like the other settings; ws/avatar.js owns all avatar behavior.
+let avatarEnabled = localStorage.getItem(STORAGE_KEYS.avatar) !== "0";
+avatarOrb.setEnabled(avatarEnabled);
+avatarToggle.addEventListener("change", () => {
+  avatarEnabled = avatarToggle.checked;
+  localStorage.setItem(STORAGE_KEYS.avatar, avatarEnabled ? "1" : "0");
+  avatarOrb.setEnabled(avatarEnabled);
+});
 
 // ── Tool state ──────────────────────────────────────────────────────────────
 let toolsEnabled = loadTools();
@@ -348,6 +362,7 @@ function setState(next) {
   const view = STATE_VIEWS[next];
   circleBtn.disabled = view.disabled;
   circleBtn.className = `circle ${STATE_CLASS[next]}`;
+  avatarOrb.onAppState(next);
   if (next !== "error") setCaption(view.caption);
 
   const live = LIVE_STATES.has(next);
@@ -406,6 +421,7 @@ function openSettings() {
   syncConnectionUi();
   inputVoice.value = settings.voice;
   inputInstructions.value = settings.instructions;
+  avatarToggle.checked = avatarEnabled;
   syncGateUi();
   updateRestartAvailability();
   settingsModal.showModal();
@@ -839,6 +855,8 @@ async function fetchConfig() {
       pinnedUrl = (json.s2sUrl || "").trim();
       // The conversation-time limiter rides on the LB being present.
       limiterOn = lbMode;
+      // Avatar lip-sync needs the deploy's bundled wav2arkit route.
+      avatarOrb.configure({ available: !!json.lipsync });
     }
     // Non-OK response: leave the fail-open default (allowDirect = true).
   } catch {
@@ -1189,6 +1207,9 @@ async function doStart(audioContext = null) {
     ...(audioContext ? { audioContext } : {}),
   });
   client = c;
+  // Avatar mode: start the lazy renderer load + lip-sync socket now so the
+  // reveal is ready when the session connects. No-op when toggled off.
+  avatarOrb.attach(c);
 
   c.addEventListener("queue", (e) => {
     const { position, queueId } = /** @type {CustomEvent<{ position: number; queueId: string }>} */ (e).detail;
@@ -1389,6 +1410,7 @@ async function teardown() {
   stopJoinCountdown();
   endTrackedSession();
   endQueueTicket();
+  avatarOrb.detach();
   chat.reset({ dismiss: true });
   if (client) {
     try {

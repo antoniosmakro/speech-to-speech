@@ -95,6 +95,12 @@
             <span class="circle-ring" aria-hidden="true"></span>
             <span class="circle-ring-outer" aria-hidden="true"></span>
             <span class="circle-core">
+              <!-- Nyx avatar mode (ws/avatar.js): the renderer mounts in
+                   .avatar-stage; .avatar-shade re-adds the core's interior
+                   depth in front of the opaque canvas. Both display:none
+                   until .avatar-live is set on the circle. -->
+              <span class="avatar-stage" id="avatar-stage" aria-hidden="true"></span>
+              <span class="avatar-shade" aria-hidden="true"></span>
               <span class="circle-indicator" aria-hidden="true">
                 <svg class="ind ind-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" stroke="none"/>
@@ -240,6 +246,17 @@
                 <code>http://localhost:8080</code> (the app adds <code>/v1/realtime</code>).
               </small>
             </label>
+
+            <div class="tool-row" id="avatar-row">
+              <div class="tool-info">
+                <span class="tool-name">Nyx avatar</span>
+                <span class="tool-desc">Show a 3D avatar in the orb while talking, lip-synced to the voice.</span>
+              </div>
+              <label class="switch">
+                <input id="avatar-toggle" type="checkbox" />
+                <span class="switch-track" aria-hidden="true"></span>
+              </label>
+            </div>
 
             <div class="field-row">
               <label class="field">
