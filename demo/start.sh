@@ -9,6 +9,11 @@ set -e
 : "${LLM_BASE_URL:=https://router.huggingface.co/v1}"
 : "${NUM_PIPELINES:=1}"
 
+# Cap math-library thread pools: oversubscribing hybrid/hyperthreaded CPUs
+# slows CPU inference well below realtime (measured 4x TTS regression).
+: "${TORCH_THREADS:=8}"
+export OMP_NUM_THREADS="$TORCH_THREADS" MKL_NUM_THREADS="$TORCH_THREADS" OPENBLAS_NUM_THREADS="$TORCH_THREADS"
+
 if [ -z "$HF_TOKEN" ]; then
   echo "WARNING: HF_TOKEN is not set — LLM calls will fail" >&2
 fi
