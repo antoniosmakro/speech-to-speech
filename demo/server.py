@@ -52,6 +52,7 @@ from pydantic import BaseModel
 
 import auth
 import limiter
+import lipsync
 
 logger = logging.getLogger("s2s.search")
 
@@ -88,10 +89,16 @@ app = FastAPI(title="s2s-demo")
 # Sign-in only matters when we're metering (prod Space), so gate it on that.
 AUTH_ENABLED = LIMITER_ENABLED and auth.attach(app)
 
+# Wav2Arkit lip-sync for the Nyx avatar: /api/wav2arkit (see lipsync.py).
+app.include_router(lipsync.router)
+
 
 @app.on_event("startup")
 async def _startup():
-    """Stand up the usage DB and a periodic sweeper — metered (prod Space) only."""
+    """Stand up the usage DB and a periodic sweeper — metered (prod Space) only.
+    Also warm the wav2arkit lip-sync engine so the first conversation doesn't
+    pay the model download + ONNX warmup."""
+    lipsync.preload()
     if not LIMITER_ENABLED:
         return
     limiter.init()
@@ -128,6 +135,8 @@ def config():
         # browser dials it itself, and Settings shows it locked.
         "s2sUrl": SPEECH_TO_SPEECH_URL,
         "auth": AUTH_ENABLED,
+        # This deployment bundles the wav2arkit lip-sync route for the avatar.
+        "lipsync": True,
     }
 
 
