@@ -10,8 +10,8 @@ set -e
 : "${NUM_PIPELINES:=1}"
 # TTS engine: kokoro (default) or pocket (Rust-native inference — immune to
 # the GIL starvation that slows Kokoro under pipeline load on CPU).
-: "${TTS_ENGINE:=kokoro}"
-: "${POCKET_VOICE:=alba}"
+: "${TTS_ENGINE:=pocket}"
+: "${POCKET_VOICE:=eponine}"
 TTS_FLAGS=""
 [ "$TTS_ENGINE" = "pocket" ] && TTS_FLAGS="--pocket_tts_voice $POCKET_VOICE --pocket_tts_device cpu"
 
