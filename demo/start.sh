@@ -8,6 +8,12 @@ set -e
 : "${LLM_MODEL:=Qwen/Qwen3-VL-30B-A3B-Instruct}"
 : "${LLM_BASE_URL:=https://router.huggingface.co/v1}"
 : "${NUM_PIPELINES:=1}"
+# TTS engine: kokoro (default) or pocket (Rust-native inference — immune to
+# the GIL starvation that slows Kokoro under pipeline load on CPU).
+: "${TTS_ENGINE:=kokoro}"
+: "${POCKET_VOICE:=alba}"
+TTS_FLAGS=""
+[ "$TTS_ENGINE" = "pocket" ] && TTS_FLAGS="--pocket_tts_voice $POCKET_VOICE --pocket_tts_device cpu"
 
 # Cap math-library thread pools: oversubscribing hybrid/hyperthreaded CPUs
 # slows CPU inference (Kokoro measured fastest at 4 threads on 20-vCPU host).
@@ -34,7 +40,8 @@ speech-to-speech \
   --device cpu \
   --stt parakeet-tdt \
   --llm_backend chat-completions \
-  --tts kokoro \
+  --tts "$TTS_ENGINE" \
+  $TTS_FLAGS \
   --model_name "$LLM_MODEL" \
   --responses_api_base_url "$LLM_BASE_URL" \
   --responses_api_api_key "$HF_TOKEN" \

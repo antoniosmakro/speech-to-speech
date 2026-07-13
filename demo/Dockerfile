@@ -22,7 +22,7 @@ COPY requirements.txt .
 ARG S2S_REF=eb4d0387dcc4b8f34220797fd00591850eacc52c
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir "qwentts-cpp-python @ https://huggingface.co/datasets/andito/qwentts-cpp-python-wheels/resolve/main/whl/cpu/qwentts_cpp_python-0.3.0%2Bcpu-py3-none-manylinux_2_34_x86_64.manylinux_2_35_x86_64.whl" \
-    && pip install --no-cache-dir "speech-to-speech[kokoro] @ git+https://github.com/huggingface/speech-to-speech.git@${S2S_REF}" \
+    && pip install --no-cache-dir "speech-to-speech[kokoro,pocket] @ git+https://github.com/huggingface/speech-to-speech.git@${S2S_REF}" \
     && pip install --no-cache-dir -r requirements.txt
 
 # Wav2Arkit lip-sync module (myned-ai/avatar-chat-server, MIT) at a pinned ref
