@@ -10,9 +10,16 @@ set -e
 : "${NUM_PIPELINES:=1}"
 
 # Cap math-library thread pools: oversubscribing hybrid/hyperthreaded CPUs
-# slows CPU inference well below realtime (measured 4x TTS regression).
-: "${TORCH_THREADS:=8}"
+# slows CPU inference (Kokoro measured fastest at 4 threads on 20-vCPU host).
+: "${TORCH_THREADS:=4}"
 export OMP_NUM_THREADS="$TORCH_THREADS" MKL_NUM_THREADS="$TORCH_THREADS" OPENBLAS_NUM_THREADS="$TORCH_THREADS"
+# wav2arkit ONNX cap (lipsync.py reads it; 12.8x realtime on 2 threads).
+: "${WAV2ARKIT_THREADS:=2}"
+export WAV2ARKIT_THREADS
+# Live user captions cost periodic STT bursts while speaking; 0 to disable.
+: "${LIVE_TRANSCRIPTION:=1}"
+LIVE_FLAG=""
+[ "$LIVE_TRANSCRIPTION" = "1" ] && LIVE_FLAG="--enable_live_transcription"
 
 if [ -z "$HF_TOKEN" ]; then
   echo "WARNING: HF_TOKEN is not set — LLM calls will fail" >&2
@@ -28,7 +35,7 @@ speech-to-speech \
   --responses_api_base_url "$LLM_BASE_URL" \
   --responses_api_api_key "$HF_TOKEN" \
   --responses_api_stream \
-  --enable_live_transcription \
+  $LIVE_FLAG \
   --num_pipelines "$NUM_PIPELINES" \
   &
 S2S_PID=$!
