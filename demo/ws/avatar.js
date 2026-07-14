@@ -91,6 +91,11 @@ class AvatarOrb {
 
     // Per-turn lip-sync state
     this._turnActive = false;
+    // UI actions (transcript commit etc.) deferred until playback drains,
+    // and a re-emit thunk that keeps the transcript bubble alive meanwhile.
+    this._deferred = [];
+    this._transcriptKeepAlive = null;
+    this._lastKeepAliveAt = 0;
     this._sentSamples = 0;
     this._frames = [];       // frameIndex -> weights
     this._rmsByFrame = [];   // frameIndex -> rms of its audio window
@@ -169,7 +174,30 @@ class AvatarOrb {
     this._appState = state;
     if (!this.active) return;
     this._setLive(LIVE_STATES.has(state));
-    this._controller?.setChatState(CHAT_STATE[state] ?? "Idle", "avatar-orb");
+    // setState() rewrites className wholesale, so re-assert the drain flag.
+    document.getElementById("main-circle")?.classList.toggle("ai-draining", this._turnActive);
+    if (this._controller) {
+      // While the turn's audio is still playing out, hold Responding — the
+      // app flips to listening at end of generation, but she's audibly
+      // mid-sentence. _endTurn re-applies the real state.
+      const mapped = CHAT_STATE[state] ?? "Idle";
+      const hold = this._turnActive && mapped === "Listening" && state !== "user-speaking";
+      if (!hold) this._controller.setChatState(mapped, "avatar-orb");
+    }
+  }
+
+  /** UI work that should land only when she has finished SAYING the response
+   *  (e.g. committing the transcript bubble). Runs immediately outside a
+   *  draining avatar turn — one line at the main.js call site. */
+  holdUntilDrained(fn) {
+    if (this.active && this._turnActive) this._deferred.push(fn);
+    else fn();
+  }
+
+  /** Note each assistant transcript with a re-emit thunk: re-emitting during
+   *  the drain window keeps the ephemeral bubble's auto-dismiss armed. */
+  noteTranscript(detail, reEmit) {
+    if (detail?.role === "assistant") this._transcriptKeepAlive = reEmit;
   }
 
   // ── Reveal ────────────────────────────────────────────────────────────────
@@ -265,6 +293,7 @@ class AvatarOrb {
 
   _beginTurn() {
     this._turnActive = true;
+    document.getElementById("main-circle")?.classList.add("ai-draining");
     this._flushed = false;
     this._sentSamples = 0;
     this._frames = [];
@@ -286,6 +315,16 @@ class AvatarOrb {
     this._frames = [];
     this._rmsByFrame = [];
     this._controller?.disableLiveBlendshapes();
+    document.getElementById("main-circle")?.classList.remove("ai-draining");
+    this._transcriptKeepAlive = null;
+    // She has finished speaking (or was interrupted): release the held UI
+    // work and re-apply the app state we deferred during the drain.
+    const deferred = this._deferred;
+    this._deferred = [];
+    for (const fn of deferred) {
+      try { fn(); } catch (err) { console.warn("[avatar] deferred UI action failed:", err); }
+    }
+    this.onAppState(this._appState);
   }
 
   _onBargeIn() {
@@ -338,6 +377,13 @@ class AvatarOrb {
           }
         }
         this._appliedFrame = target;
+      }
+
+      // Keep the transcript bubble's auto-dismiss armed while she speaks.
+      const now = performance.now();
+      if (this._transcriptKeepAlive && now - this._lastKeepAliveAt > 2000) {
+        this._lastKeepAliveAt = now;
+        try { this._transcriptKeepAlive(); } catch { /* ignored */ }
       }
 
       // Turn is over once everything sent has played out (plus a beat).
