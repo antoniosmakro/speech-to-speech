@@ -11,8 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # The module is fetched from myned-ai/avatar-chat-server (MIT) at a pinned ref
 # — linked, not copied — and the model weights are baked into the image so the
 # Space boots warm. See lipsync.py for the route it powers.
-ARG WAV2ARKIT_REF=feat/wav2arkit-standalone
-ADD https://github.com/myned-ai/avatar-chat-server/archive/refs/heads/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
+ARG WAV2ARKIT_REF=6229737de9cb4766dda4854b447fe4fb97835472
+ADD https://github.com/myned-ai/avatar-chat-server/archive/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
 RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
     && cp -r /tmp/avatar-chat-server-*/src/wav2arkit /app/wav2arkit \
     && rm -rf /tmp/acs.tar.gz /tmp/avatar-chat-server-* \

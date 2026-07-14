@@ -1207,9 +1207,7 @@ async function doStart(audioContext = null) {
     ...(audioContext ? { audioContext } : {}),
   });
   client = c;
-  // Avatar mode: start the lazy renderer load + lip-sync socket now so the
-  // reveal is ready when the session connects. No-op when toggled off.
-  avatarOrb.attach(c);
+  avatarOrb.attach(c); // no-op when the avatar toggle is off
 
   c.addEventListener("queue", (e) => {
     const { position, queueId } = /** @type {CustomEvent<{ position: number; queueId: string }>} */ (e).detail;
