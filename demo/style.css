@@ -2656,6 +2656,22 @@ body.cam-on .footer {
 
 .circle { --avatar-zoom: 1.75; }
 
+/* An orb hosting a face earns more presence: half again the diameter while
+ * the avatar is live (same height-capped clamp so the page stays
+ * scroll-free), animated so the reveal reads as the orb opening up.
+ * Toggle off -> stock size, untouched. */
+.circle {
+  transition: transform 0.18s ease, filter 0.18s ease, width 0.45s ease;
+}
+.circle.avatar-live {
+  width: clamp(210px, min(57vw, 62vh), 480px);
+}
+@media (max-width: 600px) {
+  .circle.avatar-live {
+    width: clamp(180px, min(78vw, 56vh), 360px);
+  }
+}
+
 .circle .avatar-stage {
   position: absolute;
   inset: 0;
