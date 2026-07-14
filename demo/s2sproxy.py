@@ -15,11 +15,29 @@ import os
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+import llmproxy
+
 logger = logging.getLogger("s2s.proxy")
 
 router = APIRouter()
 
 TARGET = os.environ.get("S2S_INTERNAL_WS", "").strip()
+# When set, only signed-in visitors may talk: their OAuth token (scope
+# inference-api) is registered with llmproxy so LLM usage bills THEM.
+REQUIRE_LOGIN = os.environ.get("REQUIRE_LOGIN", "0") == "1"
+
+
+def _visitor_token(ws: WebSocket) -> str | None:
+    """The signed-in visitor's OAuth access token, if any. The login cookie
+    rides the same-origin WS handshake; the session middleware attached by
+    huggingface_hub populates .session for websockets too."""
+    try:
+        from huggingface_hub import parse_huggingface_oauth
+
+        info = parse_huggingface_oauth(ws)  # duck-typed: reads .session
+        return getattr(info, "access_token", None) if info else None
+    except Exception:  # noqa: BLE001 - treated as signed out
+        return None
 
 
 @router.websocket("/v1/realtime")
@@ -27,6 +45,12 @@ async def realtime_proxy(ws: WebSocket):
     if not TARGET:
         await ws.close(code=1013)
         return
+    token = _visitor_token(ws)
+    if REQUIRE_LOGIN and not token:
+        await ws.accept()
+        await ws.close(code=4401, reason="Sign in with Hugging Face to talk")
+        return
+    llmproxy.set_active_token(token)
     await ws.accept()
     try:
         async with websockets.connect(TARGET, max_size=None) as upstream:
@@ -59,6 +83,7 @@ async def realtime_proxy(ws: WebSocket):
     except Exception as exc:  # noqa: BLE001
         logger.warning("realtime proxy error: %r", exc)
     finally:
+        llmproxy.clear_active_token()
         try:
             await ws.close()
         except Exception:  # noqa: BLE001

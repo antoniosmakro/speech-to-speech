@@ -2,14 +2,19 @@
 # Single-container entrypoint: the speech-to-speech pipeline (internal :8765)
 # plus the demo app (public :7860). HF Spaces route traffic to 7860 only, so
 # the browser reaches the pipeline through the same-origin /v1/realtime
-# passthrough (s2sproxy.py).
+# passthrough (s2sproxy.py), and the pipeline reaches the LLM through the
+# visitor-billed passthrough (llmproxy.py) — the web app must therefore be
+# up before the pipeline warms.
 set -e
 
 : "${LLM_MODEL:=Qwen/Qwen3-VL-30B-A3B-Instruct}"
-: "${LLM_BASE_URL:=https://router.huggingface.co/v1}"
+: "${LLM_UPSTREAM_URL:=https://router.huggingface.co/v1}"
+# The pipeline talks to the local passthrough, which swaps in the signed-in
+# visitor's token (their HF credits) or falls back to HF_TOKEN (warmup, dev).
+: "${LLM_BASE_URL:=http://127.0.0.1:7860/llmproxy/v1}"
 : "${NUM_PIPELINES:=1}"
-# TTS engine: kokoro (default) or pocket (Rust-native inference — immune to
-# the GIL starvation that slows Kokoro under pipeline load on CPU).
+# TTS engine: kokoro or pocket (Rust-native inference — immune to the GIL
+# starvation that slows Kokoro under pipeline load on CPU).
 : "${TTS_ENGINE:=pocket}"
 : "${POCKET_VOICE:=eponine}"
 TTS_FLAGS=""
@@ -31,26 +36,16 @@ export WAV2ARKIT_THREADS
 LIVE_FLAG=""
 [ "$LIVE_TRANSCRIPTION" = "1" ] && LIVE_FLAG="--enable_live_transcription"
 
-if [ -z "$HF_TOKEN" ]; then
-  echo "WARNING: HF_TOKEN is not set — LLM calls will fail" >&2
+# On a Space, only signed-in visitors may talk (their token pays for the LLM);
+# locally anyone can (HF_TOKEN pays). Override with REQUIRE_LOGIN=0/1.
+if [ -z "$REQUIRE_LOGIN" ]; then
+  [ -n "$SPACE_HOST" ] && REQUIRE_LOGIN=1 || REQUIRE_LOGIN=0
 fi
+export REQUIRE_LOGIN LLM_UPSTREAM_URL
 
-speech-to-speech \
-  --mode realtime \
-  --device cpu \
-  --stt parakeet-tdt \
-  --llm_backend chat-completions \
-  --tts "$TTS_ENGINE" \
-  $TTS_FLAGS \
-  --model_name "$LLM_MODEL" \
-  --responses_api_base_url "$LLM_BASE_URL" \
-  --responses_api_api_key "$HF_TOKEN" \
-  --responses_api_stream \
-  --stream_batch_sentences "$STREAM_BATCH_SENTENCES" \
-  $LIVE_FLAG \
-  --num_pipelines "$NUM_PIPELINES" \
-  &
-S2S_PID=$!
+if [ -z "$HF_TOKEN" ]; then
+  echo "WARNING: HF_TOKEN is not set — warmup/fallback LLM calls will fail" >&2
+fi
 
 # Browser connects same-origin; the proxy pumps to the internal server.
 export S2S_INTERNAL_WS="ws://127.0.0.1:8765/v1/realtime"
@@ -60,5 +55,32 @@ else
   export SPEECH_TO_SPEECH_URL="${SPEECH_TO_SPEECH_URL:-ws://localhost:7860/v1/realtime}"
 fi
 
-trap 'kill $S2S_PID 2>/dev/null' EXIT
-exec uvicorn server:app --host 0.0.0.0 --port 7860
+uvicorn server:app --host 0.0.0.0 --port 7860 &
+WEB_PID=$!
+trap 'kill $WEB_PID 2>/dev/null' EXIT
+
+# The pipeline's LLM warmup goes through the passthrough — wait for the app.
+python - <<'PY'
+import time, urllib.request
+for _ in range(120):
+    try:
+        urllib.request.urlopen("http://127.0.0.1:7860/api/config", timeout=2)
+        break
+    except Exception:
+        time.sleep(0.5)
+PY
+
+exec speech-to-speech \
+  --mode realtime \
+  --device cpu \
+  --stt parakeet-tdt \
+  --llm_backend chat-completions \
+  --tts "$TTS_ENGINE" \
+  $TTS_FLAGS \
+  --model_name "$LLM_MODEL" \
+  --responses_api_base_url "$LLM_BASE_URL" \
+  --responses_api_api_key "${HF_TOKEN:-not-needed}" \
+  --responses_api_stream \
+  --stream_batch_sentences "$STREAM_BATCH_SENTENCES" \
+  $LIVE_FLAG \
+  --num_pipelines "$NUM_PIPELINES"

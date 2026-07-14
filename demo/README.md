@@ -8,6 +8,8 @@ app_port: 7860
 pinned: false
 short_description: Voice chat with a lip-synced 3D avatar, open s2s stack
 hf_oauth: true
+hf_oauth_scopes:
+  - inference-api
 ---
 
 # Realtime Voice Demo (WebSocket transport)

@@ -53,6 +53,7 @@ from pydantic import BaseModel
 import auth
 import limiter
 import lipsync
+import llmproxy
 import s2sproxy
 
 logger = logging.getLogger("s2s.search")
@@ -87,13 +88,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="s2s-demo")
 
 # Wire HF OAuth before the app serves (no-op unless the OAuth env is present).
-# Sign-in only matters when we're metering (prod Space), so gate it on that.
-AUTH_ENABLED = LIMITER_ENABLED and auth.attach(app)
+# Sign-in also works without the limiter: this deploy uses the visitor's OAuth
+# token (scope inference-api) to bill LLM calls to their own HF credits.
+AUTH_ENABLED = auth.attach(app)
 
 # Wav2Arkit lip-sync for the Nyx avatar: /api/wav2arkit (see lipsync.py).
 app.include_router(lipsync.router)
-# Single-container deploys: same-origin /v1/realtime passthrough (s2sproxy.py).
+# Single-container deploys: same-origin /v1/realtime passthrough (s2sproxy.py)
+# and the visitor-billed LLM passthrough (llmproxy.py).
 app.include_router(s2sproxy.router)
+app.include_router(llmproxy.router)
 
 
 @app.on_event("startup")
@@ -148,7 +152,18 @@ async def me(request: Request):
     """Login state, tier, and remaining daily budget. Only meaningful in LB mode;
     sets the anonymous tracking cookie when first seen."""
     if not LIMITER_ENABLED:
-        return {"enabled": False}
+        if not AUTH_ENABLED:
+            return {"enabled": False}
+        # Sign-in without metering: the chip shows login state; no time budget.
+        return {
+            "enabled": True,
+            "auth": True,
+            **auth.user_view(request),
+            "remainingSec": None,
+            "limitSec": None,
+            "loginUrl": auth.OAUTH_LOGIN_PATH,
+            "logoutUrl": auth.OAUTH_LOGOUT_PATH,
+        }
     view = auth.user_view(request)
     tier, keys, set_cookie = auth.resolve_identity(request)
     unlimited = limiter.budget_for(tier) is None
