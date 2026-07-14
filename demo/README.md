@@ -165,9 +165,30 @@ NOT collide with the WebRTC variant.
 | `ws/s2s-ws-client.js` | WebSocket handshake + OpenAI Realtime GA protocol |
 | `ws/codec.js` | base64 <-> PCM helpers + transcript extraction (pure) |
 | `ws/orb-visualizer.js` | `OrbVisualiser`: FFT bands -> orb CSS custom properties |
+| `ws/avatar.js` | Avatar mode: 3D renderer in the orb, lip-sync scheduling, state mapping |
+| `lipsync.py` | `/api/wav2arkit` WebSocket: assistant PCM -> 52 ARKit blendshapes at 30 FPS |
 | `worklets/mic-capture.js` | AudioWorklet: 48 kHz Float32 -> 16 kHz Int16 PCM, posts ~40 ms chunks |
 | `worklets/audio-playback.js` | AudioWorklet: 24 kHz Float32 ring buffer -> 48 kHz, linear interp, fade in/out |
 | `style.css` | Orb animations, layout, dark theme (verbatim from the WebRTC app) |
+
+## Avatar
+
+An optional 3D avatar can replace the orb's core while a conversation is
+live, lip-synced to the assistant's voice ("Nyx avatar" switch in Settings;
+off by default behavior is the stock orb, untouched).
+
+- The renderer is [`@myned-ai/avatar-chat-widget`](https://www.npmjs.com/package/@myned-ai/avatar-chat-widget)
+  (MIT), lazy-loaded from a pinned CDN URL only when the switch is on.
+- Lip-sync runs server-side: `lipsync.py` bundles the
+  [`myned-ai/wav2arkit_cpu`](https://huggingface.co/myned-ai/wav2arkit_cpu)
+  ONNX model (audio -> 52 ARKit blendshape weights, real-time on CPU; cap its
+  threads with `WAV2ARKIT_THREADS`, default 2). The wav2arkit module is
+  fetched at build time from
+  [myned-ai/avatar-chat-server](https://github.com/myned-ai/avatar-chat-server) (MIT).
+- The browser schedules the returned blendshape frames against the playback
+  clock, so the mouth follows the audio the user actually hears — including
+  holding the speaking state until playback finishes, and dropping frames
+  instantly on barge-in.
 
 ## Audio pipeline notes
 
