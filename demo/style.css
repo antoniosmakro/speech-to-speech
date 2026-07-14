@@ -2722,6 +2722,14 @@ body.cam-on .footer {
   filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.7));
 }
 
+/* While the response's audio is still playing out (the server ends a
+ * response at end of GENERATION; playback lags behind), ws/avatar.js holds
+ * .ai-draining so the speaking color and speaker icon don't flip to
+ * listening mid-sentence under a talking face. */
+.circle.avatar-live.ai-draining { --glow: var(--speaking); }
+.circle.avatar-live.ai-draining .circle-indicator > .ind { opacity: 0; transform: scale(0.85); }
+.circle.avatar-live.ai-draining .ind-voice { opacity: 1; transform: scale(1); }
+
 /* The avatar-mode indicator box is smaller than stock (24% vs 44%), so the
  * thinking row's 60% width can no longer hold three 10px dots + gaps —
  * flex-shrink squashes them into ovals. Give the row the full box and pin

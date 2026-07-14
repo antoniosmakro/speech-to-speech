@@ -1237,11 +1237,12 @@ async function doStart(audioContext = null) {
   c.addEventListener("transcript", (e) => {
     const d = /** @type {CustomEvent<{ role: "user" | "assistant"; text: string; partial: boolean; itemId?: string; responseId?: string }>} */ (e).detail;
     chat.onTranscript(d);
+    avatarOrb.noteTranscript(d, () => chat.onTranscript(d));
   });
 
   c.addEventListener("response-finished", (e) => {
     const detail = /** @type {CustomEvent<{ responseId: string; status: string; audible?: boolean; transcript?: string }>} */ (e).detail;
-    chat.onResponseFinished(detail);
+    avatarOrb.holdUntilDrained(() => chat.onResponseFinished(detail));
   });
 
   c.addEventListener("toolcall", (e) => {
