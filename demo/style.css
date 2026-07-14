@@ -2755,3 +2755,14 @@ body.cam-on .footer {
 /* This deployment's TTS (Pocket) fixes the voice at launch — the selector
  * would be inert, so hide it. (Deploy-only rule; not part of the PR.) */
 .field-row:has(#voice) { display: none; }
+/* Two footer lines (upstream credit + fork credit). Column direction flips
+ * the flex axes, so horizontal placement rides align-items — including the
+ * cam-on case, where upstream pushes the credit to the bottom-right. */
+.footer {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+body.cam-on .footer {
+  align-items: flex-end;
+}
