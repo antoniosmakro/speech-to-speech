@@ -2727,3 +2727,15 @@ body.cam-on .footer {
   filter: brightness(0) invert(1);
   opacity: 0.92;
 }
+
+/* Two footer lines (upstream credit + fork credit). Column direction flips
+ * the flex axes, so horizontal placement rides align-items — including the
+ * cam-on case, where upstream pushes the credit to the bottom-right. */
+.footer {
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+body.cam-on .footer {
+  align-items: flex-end;
+}
