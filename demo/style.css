@@ -2713,3 +2713,17 @@ body.cam-on .footer {
 .circle.avatar-live .ind-thinking { width: 100%; }
 .circle.avatar-live .ind-thinking .dot { flex-shrink: 0; }
 
+
+/* Avatar credit: the Myned wordmark rides the same 14px brand-mark row as
+ * the HF/Cerebras marks; the source PNG is navy, inverted to read on dark. */
+.myned-credit {
+  display: inline-flex;
+  align-items: center;
+}
+.myned-mark {
+  height: 14px;
+  width: auto;
+  flex: none;
+  filter: brightness(0) invert(1);
+  opacity: 0.92;
+}
