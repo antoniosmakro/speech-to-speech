@@ -2751,3 +2751,7 @@ body.cam-on .footer {
   filter: brightness(0) invert(1);
   opacity: 0.92;
 }
+
+/* This deployment's TTS (Pocket) fixes the voice at launch — the selector
+ * would be inert, so hide it. (Deploy-only rule; not part of the PR.) */
+.field-row:has(#voice) { display: none; }
