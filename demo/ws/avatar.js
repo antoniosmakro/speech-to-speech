@@ -24,10 +24,9 @@
  *    every ~250 ms via the client's `playback-stats` event; played time is
  *    `sentMs - queuedMs`, extrapolated between reports.
  *  - State: the app's `setState()` calls `onAppState()`, which maps app states
- *    to the widget's ChatState, keeps the orb's state classes running, and
- *    repaints the avatar's scene backdrop with the orb's own `--glow` color
- *    mixed into the page dark (the orb core never shows the full-strength
- *    color; ~12 % matches its tinted fill).
+ *    to the widget's ChatState. All state COLORING is CSS: the .avatar-shade
+ *    overlay carries the orb core's --glow-keyed gradient over a constant
+ *    scene backdrop, so the avatar circle matches the stock orb per state.
  */
 
 /** Pinned renderer library + avatar asset (jsDelivr, versioned). */
@@ -85,7 +84,6 @@ class AvatarOrb {
     this._listeners = [];
     /** @type {WebSocket | null} lip-sync socket */
     this._ws = null;
-    this._wsReady = false;
     this._appState = "idle";
     this._offsetMs = Number(store.get("s2s.avatar.offsetMs", "")) || OFFSET_MS_DEFAULT;
 
@@ -164,7 +162,6 @@ class AvatarOrb {
     if (this._ws) {
       try { this._ws.close(); } catch { /* ignored */ }
       this._ws = null;
-      this._wsReady = false;
     }
     this._controller?.setChatState("Idle", "avatar-orb");
   }
@@ -246,12 +243,11 @@ class AvatarOrb {
     ws.addEventListener("message", (e) => {
       let msg;
       try { msg = JSON.parse(e.data); } catch { return; }
-      if (msg.type === "ready") this._wsReady = true;
-      else if (msg.type === "frames") this._onFrames(msg.start, msg.weights);
+      if (msg.type === "frames") this._onFrames(msg.start, msg.weights);
       else if (msg.type === "error") console.warn("[avatar] lipsync:", msg.message);
     });
     ws.addEventListener("close", () => {
-      if (this._ws === ws) { this._ws = null; this._wsReady = false; }
+      if (this._ws === ws) this._ws = null;
     });
     ws.addEventListener("error", () => { /* close handler runs after */ });
   }
