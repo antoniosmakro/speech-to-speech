@@ -43,6 +43,12 @@ if [ -z "$REQUIRE_LOGIN" ]; then
 fi
 export REQUIRE_LOGIN LLM_UPSTREAM_URL
 
+# In-server conversation queue (slotqueue.py): one visitor per pipeline talks,
+# the next QUEUE_MAX (default 10) wait in line with live positions, beyond
+# that the page says come back later. QUEUE_ENABLED=0 restores direct mode.
+: "${QUEUE_ENABLED:=1}"
+export QUEUE_ENABLED NUM_PIPELINES
+
 if [ -z "$HF_TOKEN" ]; then
   echo "WARNING: HF_TOKEN is not set — warmup/fallback LLM calls will fail" >&2
 fi

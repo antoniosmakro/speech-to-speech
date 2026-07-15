@@ -55,6 +55,7 @@ import limiter
 import lipsync
 import llmproxy
 import s2sproxy
+import slotqueue
 
 logger = logging.getLogger("s2s.search")
 
@@ -136,8 +137,10 @@ def config():
     s2s server URL. The LB address itself is intentionally NOT included."""
     return {
         "search": bool(SERPER_KEY),
-        "lb": bool(LOAD_BALANCER_URL),
-        "allowDirect": not LOAD_BALANCER_URL,
+        # The in-server slot queue speaks the same /api/session contract, so it
+        # puts the client in LB mode too (queue UX, no direct URL field).
+        "lb": bool(LOAD_BALANCER_URL) or slotqueue.ENABLED,
+        "allowDirect": not (LOAD_BALANCER_URL or slotqueue.ENABLED),
         # Deploy-pinned direct s2s URL (empty when unset). Not a secret: the
         # browser dials it itself, and Settings shows it locked.
         "s2sUrl": SPEECH_TO_SPEECH_URL,
@@ -252,6 +255,10 @@ async def session(request: Request):
     (compute host + short-lived token) the browser must dial directly — that one
     URL is unavoidably exposed, but the stable load-balancer address is not. On a
     successful grant we reserve the first time chunk against the day's budget."""
+    if slotqueue.ENABLED:
+        # Single-container deploy: this server IS the load balancer (slotqueue.py).
+        body, status = slotqueue.create_session()
+        return JSONResponse(body, status_code=status)
     if not LOAD_BALANCER_URL:
         # No LB configured — this deploy is direct-mode only; the browser should
         # never call this. 404 so it's indistinguishable from a missing route.
@@ -318,6 +325,9 @@ async def queue_status(queue_id: str, request: Request):
     """Poll a waiting ticket: relay the position, or — when the head of the line
     claims a freed slot — reserve the budget now and return the grant. Re-checks the
     daily budget at claim, since a multi-minute wait could have spent it elsewhere."""
+    if slotqueue.ENABLED:
+        body, status = slotqueue.poll_queue(queue_id)
+        return JSONResponse(body, status_code=status)
     if not LOAD_BALANCER_URL:
         raise HTTPException(status_code=404, detail="Not found.")
 
@@ -372,6 +382,9 @@ async def queue_status(queue_id: str, request: Request):
 @app.delete("/api/queue/{queue_id}")
 async def queue_leave(queue_id: str):
     """Leave the queue from the explicit 'Leave queue' button (a real fetch)."""
+    if slotqueue.ENABLED:
+        slotqueue.leave_queue(queue_id)
+        return {"ok": True}
     if not LOAD_BALANCER_URL:
         raise HTTPException(status_code=404, detail="Not found.")
     await _lb_leave(queue_id)
@@ -382,6 +395,11 @@ async def queue_leave(queue_id: str):
 async def queue_end(request: Request):
     """Leave the queue on teardown/tab-close (navigator.sendBeacon, which can only
     POST). Body: { queueId }. Best-effort; the LB reaps the ticket on TTL anyway."""
+    if slotqueue.ENABLED:
+        qid = await _queue_id(request)
+        if qid:
+            slotqueue.leave_queue(qid)
+        return {"ok": True}
     if not LOAD_BALANCER_URL:
         raise HTTPException(status_code=404, detail="Not found.")
     qid = await _queue_id(request)

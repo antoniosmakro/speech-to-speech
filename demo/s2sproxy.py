@@ -16,6 +16,7 @@ import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import llmproxy
+import slotqueue
 
 logger = logging.getLogger("s2s.proxy")
 
@@ -53,6 +54,17 @@ async def realtime_proxy(ws: WebSocket):
         except Exception:  # noqa: BLE001 - client may already be gone
             pass
         return
+    # With the in-server queue on, a socket must present the session_token from
+    # its /api/session grant — that's what makes the queue unskippable. Claiming
+    # binds the slot to this socket; the finally releases it on disconnect.
+    session_token = ws.query_params.get("session_token", "")
+    if slotqueue.ENABLED and not slotqueue.claim(session_token):
+        try:
+            await ws.accept()
+            await ws.close(code=4409, reason="No session slot — reconnect from the page")
+        except Exception:  # noqa: BLE001 - client may already be gone
+            pass
+        return
     llmproxy.set_active_token(token)
     await ws.accept()
     try:
@@ -87,6 +99,8 @@ async def realtime_proxy(ws: WebSocket):
     except Exception as exc:  # noqa: BLE001
         logger.warning("realtime proxy error: %r", exc)
     finally:
+        if slotqueue.ENABLED:
+            slotqueue.release(session_token)
         llmproxy.clear_active_token()
         try:
             await ws.close()
