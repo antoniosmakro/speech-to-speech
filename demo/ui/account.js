@@ -80,7 +80,13 @@ export class Account {
     if (!me.loggedIn) {
       // Signed-out: a sign-in pill (only when OAuth is actually available).
       if (me.auth && me.loginUrl) {
-        this._root.innerHTML = `<a class="signin-pill" href="${escHtml(me.loginUrl)}" title="Sign in for more time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span>Sign in</span></a>`;
+        // Inside the hf.co iframe the session cookie is third-party and mobile
+        // browsers block it — sign-in can only work full-page, so link there.
+        const framed = window.self !== window.top;
+        const href = framed ? location.href : me.loginUrl;
+        const target = framed ? ` target="_blank" rel="noopener"` : "";
+        const label = framed ? "Open to sign in" : "Sign in";
+        this._root.innerHTML = `<a class="signin-pill" href="${escHtml(href)}"${target} title="Sign in with Hugging Face to talk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span>${label}</span></a>`;
       } else {
         this._root.innerHTML = "";
         this._root.hidden = true;

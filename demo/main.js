@@ -1168,6 +1168,19 @@ function stopJoinCountdown() {
  * @param {AudioContext | null} [audioContext]
  */
 async function doStart(audioContext = null) {
+  // This deploy requires sign-in (the visitor's token pays for the LLM):
+  // guide instead of dialing into a socket refusal. Inside the hf.co iframe
+  // the login cookie is third-party (blocked on mobile) — point full-page.
+  try {
+    const me = await (await fetch("api/me")).json();
+    if (me.enabled && me.auth && !me.loggedIn) {
+      const framed = window.self !== window.top;
+      setState("error");
+      setCaption(framed ? "Sign in required — tap 'Open to sign in' (top right)" : "Sign in (top right) to talk", "error");
+      return;
+    }
+  } catch { /* /api/me unavailable: proceed; the socket will decide */ }
+
   // Resolve the target before touching mic/audio so a misconfiguration (e.g.
   // direct mode with no URL) fails fast with a clear message.
   const target = connectionTarget();

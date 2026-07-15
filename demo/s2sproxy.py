@@ -47,8 +47,11 @@ async def realtime_proxy(ws: WebSocket):
         return
     token = _visitor_token(ws)
     if REQUIRE_LOGIN and not token:
-        await ws.accept()
-        await ws.close(code=4401, reason="Sign in with Hugging Face to talk")
+        try:
+            await ws.accept()
+            await ws.close(code=4401, reason="Sign in with Hugging Face to talk")
+        except Exception:  # noqa: BLE001 - client may already be gone
+            pass
         return
     llmproxy.set_active_token(token)
     await ws.accept()
@@ -59,7 +62,8 @@ async def realtime_proxy(ws: WebSocket):
                 while True:
                     msg = await ws.receive()
                     if msg.get("type") == "websocket.disconnect":
-                        raise WebSocketDisconnect(msg.get("code") or 1000)
+                        # Normal termination — don't let it escape as an error.
+                        return
                     if msg.get("text") is not None:
                         await upstream.send(msg["text"])
                     elif msg.get("bytes") is not None:
@@ -74,7 +78,7 @@ async def realtime_proxy(ws: WebSocket):
 
             done, pending = await asyncio.wait(
                 [asyncio.create_task(pump_up()), asyncio.create_task(pump_down())],
-                return_when=asyncio.FIRST_EXCEPTION,
+                return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
                 task.cancel()
