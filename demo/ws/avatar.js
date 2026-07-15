@@ -108,9 +108,13 @@ class AvatarOrb {
     this._rmsCarry = { sum: 0, n: 0 };
   }
 
-  /** Deploy capability, from /api/config. */
+  /** Deploy capability, from /api/config. Kicks a background preload so the
+   *  first reveal doesn't wait for the renderer + avatar download. */
   configure({ available }) {
     this._available = !!available;
+    if (this.active) {
+      setTimeout(() => { if (this.active) void this._load(); }, 1500);
+    }
   }
 
   /** User toggle. Off mid-call hides the avatar and stops lip-sync. */
@@ -170,7 +174,11 @@ class AvatarOrb {
   onAppState(state) {
     this._appState = state;
     if (!this.active) return;
-    this._setLive(LIVE_STATES.has(state));
+    const live = LIVE_STATES.has(state);
+    this._setLive(live);
+    // The hidden renderer costs GPU: run it only while revealed.
+    if (live) this._controller?.resume?.();
+    else this._controller?.pause?.();
     // setState() rewrites className wholesale, so re-assert the drain flag.
     document.getElementById("main-circle")?.classList.toggle("ai-draining", this._turnActive);
     if (this._controller) {
@@ -218,7 +226,7 @@ class AvatarOrb {
             backgroundColor: SCENE_BASE,
             onError: (err) => console.warn("[avatar] renderer failed:", err),
           });
-          this.onAppState(this._appState); // apply current state + tint
+          this.onAppState(this._appState); // applies state; pauses if hidden
         } catch (err) {
           console.warn("[avatar] mount failed:", err);
         }
