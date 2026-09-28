@@ -32,7 +32,8 @@ RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pyt
 
 # Wav2Arkit lip-sync module (myned-ai/avatar-chat-server, MIT) at a pinned ref
 # — linked, not copied — plus all models baked in so the Space boots warm:
-# wav2arkit (lip-sync), Parakeet (STT), Kokoro (TTS).
+# wav2arkit (lip-sync), Parakeet (STT), Canary int8 (STT told the language —
+# Greek), Kokoro (TTS).
 ARG WAV2ARKIT_REF=6229737de9cb4766dda4854b447fe4fb97835472
 ADD https://github.com/myned-ai/avatar-chat-server/archive/${WAV2ARKIT_REF}.tar.gz /tmp/acs.tar.gz
 RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
@@ -41,6 +42,7 @@ RUN tar -xzf /tmp/acs.tar.gz -C /tmp \
     && python -c "from huggingface_hub import snapshot_download; \
         snapshot_download('myned-ai/wav2arkit_cpu', local_dir='pretrained_models'); \
         snapshot_download('nvidia/parakeet-tdt-0.6b-v3'); \
+        snapshot_download('istupakov/canary-1b-v2-onnx', allow_patterns=['*.int8.onnx', 'config.json', 'vocab.txt']); \
         snapshot_download('hexgrad/Kokoro-82M')"
 
 COPY . .
