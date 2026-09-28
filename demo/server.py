@@ -504,4 +504,15 @@ async def session_end(request: Request):
 
 # Static front-end. Registered last so the /api routes win. `html=True` serves
 # index.html at "/". The repo is public anyway, so serving the dir is fine.
-app.mount("/", StaticFiles(directory=HERE, html=True), name="static")
+class RevalidatedStaticFiles(StaticFiles):
+    """Static files the browser must revalidate on every load (an unchanged
+    file costs a 304). Without a Cache-Control header browsers cache
+    heuristically — for days — so a deploy wouldn't reach returning visitors."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", RevalidatedStaticFiles(directory=HERE, html=True), name="static")
