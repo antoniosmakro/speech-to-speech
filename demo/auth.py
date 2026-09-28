@@ -13,6 +13,7 @@ Identity:
                    signed-cookie id (OR-matched in the limiter)
 """
 
+import datetime
 import logging
 import os
 import secrets
@@ -91,14 +92,26 @@ AUTH_DEBUG = bool(os.environ.get("AUTH_DEBUG"))
 _orgs_cache: "dict[str, set[str]]" = {}
 
 
+# The login cookie outlives the HF access token inside it (~8 h), and an
+# expired token fails every LLM call with a 401. A token that expires within
+# the margin counts as signed out, so the page asks for a fresh sign-in.
+TOKEN_EXPIRY_MARGIN = datetime.timedelta(minutes=10)
+
+
 def current_oauth(request):
-    """The parsed HF OAuth info (user_info + access_token), or None."""
+    """The parsed HF OAuth info (user_info + access_token), or None — also None
+    when the access token has expired or is about to."""
     if not oauth_enabled:
         return None
     try:
-        return parse_huggingface_oauth(request)
+        info = parse_huggingface_oauth(request)
     except Exception:
         return None
+    expires = _field(info, "access_token_expires_at")
+    # huggingface_hub stores it naive, in local time (datetime.fromtimestamp).
+    if expires is not None and expires - TOKEN_EXPIRY_MARGIN <= datetime.datetime.now():
+        return None
+    return info
 
 
 def current_user(request):

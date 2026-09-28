@@ -15,6 +15,7 @@ import os
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+import auth
 import llmproxy
 import slotqueue
 
@@ -29,16 +30,11 @@ REQUIRE_LOGIN = os.environ.get("REQUIRE_LOGIN", "0") == "1"
 
 
 def _visitor_token(ws: WebSocket) -> str | None:
-    """The signed-in visitor's OAuth access token, if any. The login cookie
-    rides the same-origin WS handshake; the session middleware attached by
-    huggingface_hub populates .session for websockets too."""
-    try:
-        from huggingface_hub import parse_huggingface_oauth
-
-        info = parse_huggingface_oauth(ws)  # duck-typed: reads .session
-        return getattr(info, "access_token", None) if info else None
-    except Exception:  # noqa: BLE001 - treated as signed out
-        return None
+    """The signed-in visitor's OAuth access token, if any (and not expired).
+    The login cookie rides the same-origin WS handshake; the session middleware
+    attached by huggingface_hub populates .session for websockets too."""
+    info = auth.current_oauth(ws)  # duck-typed: reads .session
+    return getattr(info, "access_token", None) if info else None
 
 
 @router.websocket("/v1/realtime")
