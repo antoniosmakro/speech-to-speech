@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY requirements.txt constraints.txt ./
+# Every pip install below is held to the known-good versions in constraints.txt.
+ENV PIP_CONSTRAINT=/app/constraints.txt
 # CPU-only torch first (the default index pulls multi-GB CUDA builds), then
 # the CPU build of the Qwen3-TTS GGML runtime (unused at runtime — Kokoro is
 # the TTS — but required to satisfy speech-to-speech's dependency set), then
