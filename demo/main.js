@@ -23,6 +23,8 @@ import { Account } from "./ui/account.js";
 import { avatarOrb } from "./ws/avatar.js";
 
 const DEFAULT_VOICE = "bm_fable";
+// Replaced by the deploy's default when /api/config reports its voices.
+let defaultVoice = DEFAULT_VOICE;
 const DEFAULT_INSTRUCTIONS =
   "You are a friendly voice assistant. " +
   "Keep replies short, warm, and spoken. Avoid long monologues.";
@@ -266,6 +268,9 @@ const settingsForm = /** @type {HTMLFormElement} */ (settingsModal.querySelector
 /** @type {AppState} */
 let currentState = "idle";
 let settings = loadSettings();
+/** Voice id -> the language it speaks, when the deploy reports its voices.
+ *  @type {Map<string, string> | null} */
+let voiceLanguages = null;
 
 // ── Connection target ────────────────────────────────────────────────────────
 // Three modes, decided by the deploy via /api/config:
@@ -317,10 +322,14 @@ function activeToolDefs() {
   return defs;
 }
 
-/** Instructions plus the hidden tool-use hint when any tool is active. */
+/** Instructions plus the hidden hints: the selected voice's language (a Pocket
+ *  voice can only speak its model's language) and tool use when any tool is
+ *  active. */
 function effectiveInstructions() {
-  const base = settings.instructions;
-  return activeToolDefs().length ? base + TOOL_USE_HINT : base;
+  let text = settings.instructions;
+  const language = voiceLanguages?.get(settings.voice);
+  if (language) text += ` Always reply in ${language}, even if the user speaks another language.`;
+  return activeToolDefs().length ? text + TOOL_USE_HINT : text;
 }
 
 /** Push the active tool set to a live session so toggles apply mid-call. */
@@ -857,6 +866,7 @@ async function fetchConfig() {
       limiterOn = lbMode;
       // Avatar lip-sync needs the deploy's bundled wav2arkit route.
       avatarOrb.configure({ available: !!json.lipsync });
+      applyVoiceCatalog(json.voices);
     }
     // Non-OK response: leave the fail-open default (allowDirect = true).
   } catch {
@@ -867,6 +877,35 @@ async function fetchConfig() {
   void account.refresh();
   syncToolsUi();
   syncConnectionUi();
+}
+
+/**
+ * Swap the page's built-in voice list for the voices the deploy's TTS serves,
+ * grouped by language. A saved voice the deploy doesn't serve (e.g. from an
+ * older version of the page) falls back to the deploy's default.
+ * @param {{ default: string, options: { id: string, name: string, description: string, language: string }[] } | null | undefined} catalog
+ */
+function applyVoiceCatalog(catalog) {
+  if (!catalog?.options?.length) return;
+  voiceLanguages = new Map(catalog.options.map((v) => [v.id, v.language]));
+  defaultVoice = voiceLanguages.has(catalog.default) ? catalog.default : catalog.options[0].id;
+  /** @type {Map<string, HTMLOptGroupElement>} */
+  const groups = new Map();
+  for (const v of catalog.options) {
+    let group = groups.get(v.language);
+    if (!group) {
+      group = document.createElement("optgroup");
+      group.label = v.language;
+      groups.set(v.language, group);
+    }
+    const option = document.createElement("option");
+    option.value = v.id;
+    option.textContent = v.description ? `${v.name} — ${v.description}` : v.name;
+    group.append(option);
+  }
+  inputVoice.replaceChildren(...groups.values());
+  if (!voiceLanguages.has(settings.voice)) settings.voice = defaultVoice;
+  inputVoice.value = settings.voice;
 }
 
 /**
@@ -935,7 +974,7 @@ function createResumedAudioContext() {
 function readSettingsFromForm() {
   return {
     directUrl: allowDirect && !pinnedUrl ? inputLbUrl.value.trim() : settings.directUrl,
-    voice: inputVoice.value || DEFAULT_VOICE,
+    voice: inputVoice.value || defaultVoice,
     instructions: inputInstructions.value.trim() || DEFAULT_INSTRUCTIONS,
     noiseGate: readGateThreshold(),
   };

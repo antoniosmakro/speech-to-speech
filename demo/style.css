@@ -2752,9 +2752,11 @@ body.cam-on .footer {
   opacity: 0.92;
 }
 
-/* This deployment's TTS (Pocket) fixes the voice at launch — the selector
- * would be inert, so hide it. (Deploy-only rule; not part of the PR.) */
-.field-row:has(#voice) { display: none; }
+/* Pocket voice labels carry descriptions ("Eleni — female, …"): the selector
+ * takes the full row and truncates rather than widening the dialog. */
+.field-row:has(#voice) { grid-template-columns: minmax(0, 1fr); }
+#voice { min-width: 0; text-overflow: ellipsis; }
+
 /* Two footer lines (upstream credit + fork credit). Column direction flips
  * the flex axes, so horizontal placement rides align-items — including the
  * cam-on case, where upstream pushes the credit to the bottom-right. */

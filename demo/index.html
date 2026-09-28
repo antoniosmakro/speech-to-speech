@@ -271,8 +271,8 @@
               <label class="field">
                 <span>Voice</span>
                 <select id="voice">
-                  <!-- Kokoro voice ids — this deployment's backend runs
-                       Kokoro-82M TTS (CPU) instead of Qwen3-TTS. -->
+                  <!-- Kokoro voice ids (TTS_ENGINE=kokoro). Under Pocket TTS,
+                       main.js swaps in the voices /api/config reports. -->
                   <option value="bm_fable" selected>Fable (UK male)</option>
                   <option value="bm_george">George (UK male)</option>
                   <option value="bf_emma">Emma (UK female)</option>

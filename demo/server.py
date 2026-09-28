@@ -54,6 +54,7 @@ import auth
 import limiter
 import lipsync
 import llmproxy
+import pocket_voices
 import s2sproxy
 import slotqueue
 
@@ -147,6 +148,20 @@ def config():
         "auth": AUTH_ENABLED,
         # This deployment bundles the wav2arkit lip-sync route for the avatar.
         "lipsync": True,
+        "voices": _voice_options(),
+    }
+
+
+def _voice_options():
+    """Voices the co-located pipeline serves (Pocket TTS only), for the
+    Settings voice selector; None leaves the page's built-in list."""
+    if os.environ.get("TTS_ENGINE") != "pocket":
+        return None
+    return {
+        "default": pocket_voices.default_voice(),
+        "options": [
+            {k: v[k] for k in ("id", "name", "description", "language")} for v in pocket_voices.catalog()
+        ],
     }
 
 

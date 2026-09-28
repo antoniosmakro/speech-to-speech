@@ -17,6 +17,11 @@ set -e
 # starvation that slows Kokoro under pipeline load on CPU).
 : "${TTS_ENGINE:=pocket}"
 : "${POCKET_VOICE:=eponine}"
+# Extra Pocket TTS models beside Kyutai's English one: comma-separated
+# name=<config yaml> entries (see pocket_voices.py). Their voices join the
+# Settings voice selector.
+: "${POCKET_MODELS:=greek=hf://myned-ai/pocket-tts-greek/greek.yaml}"
+export TTS_ENGINE POCKET_VOICE POCKET_MODELS
 TTS_FLAGS=""
 [ "$TTS_ENGINE" = "pocket" ] && TTS_FLAGS="--pocket_tts_voice $POCKET_VOICE --pocket_tts_device cpu"
 
@@ -76,7 +81,8 @@ for _ in range(120):
         time.sleep(0.5)
 PY
 
-exec speech-to-speech \
+# run_pipeline.py = the speech-to-speech CLI with the multi-voice Pocket handler.
+exec python run_pipeline.py \
   --mode realtime \
   --device cpu \
   --stt parakeet-tdt \
