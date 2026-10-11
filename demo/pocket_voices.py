@@ -13,6 +13,16 @@ An extra model's voices come from `voices/voices.json` next to its config
 built-in English voices keep their bare preset names ("eponine"). The model
 name doubles as the language the voice speaks ("greek" -> "Greek").
 
+A voice's model can also come with a Parakeet speech-recognition fine-tune
+for its language, listed in PARAKEET_MODELS as `name=<HF repo>` entries keyed
+by the same model name:
+
+    PARAKEET_MODELS="greek=myned-ai/parakeet-tdt-0.6b-v3-greek"
+
+Conversations in that model's voices are transcribed by the fine-tune, every
+other one by the base Parakeet; run_pipeline.py keeps one of them loaded at a
+time and reports which in the STT status file.
+
 Two readers: run_pipeline.py loads every model and primes every voice, and
 /api/config hands the same list to the Settings voice selector.
 """
@@ -37,8 +47,39 @@ ENGLISH_VOICES = [
 ]
 
 
+# The STT model the pipeline has loaded, for the page's "loading" notice
+# (the pipeline and the web app are separate processes).
+STT_STATUS_FILE = "/tmp/s2s-stt-status.json"
+BASE_STT = "base"
+
+
 def default_voice() -> str:
     return os.environ.get("POCKET_VOICE", "eponine").strip()
+
+
+def parakeet_models() -> dict[str, str]:
+    return dict(parse_models(os.environ.get("PARAKEET_MODELS", "")))
+
+
+def stt_model(voice: dict) -> str:
+    """The STT model for conversations in this voice: its Pocket model's
+    Parakeet fine-tune if there is one, else the base Parakeet."""
+    return voice["model"] if voice["model"] in parakeet_models() else BASE_STT
+
+
+def write_stt_status(status: dict) -> None:
+    tmp = STT_STATUS_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(status, f)
+    os.replace(tmp, STT_STATUS_FILE)
+
+
+def read_stt_status() -> dict | None:
+    try:
+        with open(STT_STATUS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
 
 
 def parse_models(spec: str) -> list[tuple[str, str]]:

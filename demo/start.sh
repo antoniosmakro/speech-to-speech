@@ -21,7 +21,10 @@ set -e
 # name=<config yaml> entries (see pocket_voices.py). Their voices join the
 # Settings voice selector.
 : "${POCKET_MODELS:=greek=hf://myned-ai/pocket-tts-greek/greek.yaml}"
-export TTS_ENGINE POCKET_VOICE POCKET_MODELS
+# Parakeet speech-recognition fine-tunes for those models' languages, by the
+# same name; the pipeline loads the one the selected voice needs.
+: "${PARAKEET_MODELS:=greek=myned-ai/parakeet-tdt-0.6b-v3-greek}"
+export TTS_ENGINE POCKET_VOICE POCKET_MODELS PARAKEET_MODELS
 TTS_FLAGS=""
 [ "$TTS_ENGINE" = "pocket" ] && TTS_FLAGS="--pocket_tts_voice $POCKET_VOICE --pocket_tts_device cpu"
 

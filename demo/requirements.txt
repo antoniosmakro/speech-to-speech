@@ -10,5 +10,5 @@ numpy>=1.26.0
 scipy>=1.10.0
 librosa>=0.10.0
 onnxruntime>=1.17.0
-# Canary-1b-v2 (ONNX) for STT told the session's language (run_pipeline.py).
+# Runs the ONNX Parakeet fine-tunes (PARAKEET_MODELS, run_pipeline.py).
 onnx-asr==0.12.0

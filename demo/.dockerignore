@@ -10,3 +10,4 @@ venv/
 *.log
 docs/
 .claude/
+parakeet_models/

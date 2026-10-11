@@ -6,16 +6,23 @@ swapped, so the session's voice drives the conversation's language:
   English model plus any POCKET_MODELS — and follows the session's voice turn
   by turn, so the Settings voice selector works mid-conversation. (The stock
   handler loads one voice at launch and ignores the session.)
-- STT transcribes with Canary-1b-v2, told the language, when the session's
-  voice speaks one Canary knows (Greek, ...). Parakeet picks the language on
-  its own, and on short phrases it guesses English: "Γεια σου" -> "Yeah".
-- VAD records each pipeline's session, since STT only receives bare audio.
+- STT transcribes with the Parakeet fine-tune for the session voice's
+  language (PARAKEET_MODELS), else the base Parakeet, keeping one of them in
+  memory at a time. The base model picks the language on its own and on short
+  Greek phrases guesses English ("Γεια σου" -> "Yeah"); the Greek fine-tune
+  in turn no longer understands English.
+- VAD records each pipeline's session, since STT only receives bare audio,
+  and tells STT when the voice changes so the swap starts right away.
 
 Arguments are the CLI's own; start.sh passes them.
 """
 
+import ctypes
+import gc
 import logging
 import os
+import threading
+from time import perf_counter
 
 import numpy as np
 from speech_to_speech import s2s_pipeline
@@ -26,12 +33,12 @@ from speech_to_speech.TTS import pocket_tts_handler
 from speech_to_speech.VAD.vad_handler import VADHandler
 
 import pocket_voices
+from pocket_voices import BASE_STT
 
 logger = logging.getLogger(__name__)
 
-# Canary-1b-v2's languages, by the English name pocket_voices uses. English
-# stays with Parakeet.
-CANARY_LANGUAGES = {
+# Language codes by the English name pocket_voices uses.
+LANGUAGE_CODES = {
     "Bulgarian": "bg", "Croatian": "hr", "Czech": "cs", "Danish": "da", "Dutch": "nl",
     "Estonian": "et", "Finnish": "fi", "French": "fr", "German": "de", "Greek": "el",
     "Hungarian": "hu", "Italian": "it", "Latvian": "lv", "Lithuanian": "lt", "Maltese": "mt",
@@ -42,12 +49,21 @@ CANARY_LANGUAGES = {
 # Parakeet relabels any language code outside this list with the previous
 # turn's; it lacks Greek and Maltese, which the model does support.
 parakeet_tdt_handler.SUPPORTED_LANGUAGES.extend(
-    code for code in CANARY_LANGUAGES.values() if code not in parakeet_tdt_handler.SUPPORTED_LANGUAGES
+    code for code in LANGUAGE_CODES.values() if code not in parakeet_tdt_handler.SUPPORTED_LANGUAGES
 )
+
+# Fine-tunes live in plain folders: onnxruntime can't follow the HF cache's
+# symlinks to the external weights file. The Dockerfile bakes them in.
+PARAKEET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parakeet_models")
+PARAKEET_FILES = ["config.json", "vocab.txt", "encoder-model.onnx", "encoder-model.onnx.data", "decoder_joint-model.onnx"]
+# A turn spoken while its model loads waits this long at most, then goes to
+# whichever model is loaded.
+LOAD_WAIT_S = 90
 
 # The session each pipeline's VAD saw last. A pipeline serves one
 # conversation at a time, so that's the one its STT is transcribing.
 _sessions = {}
+_stt_handlers = []
 
 
 def _session_voice(runtime_config):
@@ -59,55 +75,141 @@ class SessionTrackingVADHandler(VADHandler):
     def process(self, audio_chunk):
         if isinstance(audio_chunk, tuple):
             _sessions[self.pipeline_index] = audio_chunk[1]
+            voice = _session_voice(audio_chunk[1])
+            if voice != getattr(self, "_voice", None):
+                self._voice = voice
+                for stt in _stt_handlers:
+                    if stt.pipeline_index == self.pipeline_index:
+                        stt.request(stt.model_for(voice))
         yield from super().process(audio_chunk)
 
 
-def _load_canary():
-    """Canary-1b-v2, int8 ONNX via onnx-asr: ~0.45 s per short phrase on 4
-    threads, about Parakeet's speed. None if it can't load (logged); every
-    turn then goes to Parakeet."""
-    try:
+class SwappingSTTHandler(parakeet_tdt_handler.ParakeetTDTSTTHandler):
+    """One STT model in memory: the base Parakeet, or the fine-tune for the
+    session voice's language. A voice change loads the new model in the
+    background; it replaces the old one once ready, and a turn spoken before
+    then waits for it."""
+
+    def setup(self, *args, **kwargs) -> None:
+        super().setup(*args, **kwargs)  # loads the base Parakeet
+        catalog = pocket_voices.catalog()
+        self._repos = pocket_voices.parakeet_models()
+        self._model_for_voice = {v["id"]: pocket_voices.stt_model(v) for v in catalog}
+        self._codes = {v["model"]: LANGUAGE_CODES.get(v["language"]) for v in catalog if v["model"]}
+        self._extra = None  # the loaded fine-tune, while one is active
+        self._active = BASE_STT
+        self._loading = None
+        self._wanted = BASE_STT
+        self._failed = set()
+        self._state = threading.Condition()
+        self._in_use = threading.Lock()  # held while a turn is transcribed
+        _stt_handlers.append(self)
+        self._write_status()
+        self.request(self.model_for(pocket_voices.default_voice()))
+
+    def model_for(self, voice):
+        """Unknown voices are spoken by the default voice, so they get its model."""
+        default = self._model_for_voice.get(pocket_voices.default_voice(), BASE_STT)
+        return self._model_for_voice.get(voice, default)
+
+    def request(self, name):
+        """Start loading `name` unless it's loaded, loading, or failed before."""
+        with self._state:
+            self._wanted = name
+            if name == self._active or self._loading is not None or name in self._failed:
+                return
+            self._loading = name
+            self._write_status()
+        threading.Thread(target=self._load, args=(name,), name=f"stt-load-{name}", daemon=True).start()
+
+    def _load(self, name):
+        logger.info("Loading STT model %r", name)
+        start = perf_counter()
+        try:
+            model = self._open(name)
+        except Exception as exc:
+            logger.warning("STT model %r unavailable, keeping %r: %r", name, self._active, exc)
+            model = None
+        with self._in_use, self._state:
+            if model is not None:
+                previous = self._active
+                self._install(name, model)
+                logger.info("STT model %r ready in %.1fs, %r unloaded", name, perf_counter() - start, previous)
+            else:
+                self._failed.add(name)
+            self._loading = None
+            self._write_status()
+            self._state.notify_all()
+            follow = self._wanted if self._wanted != self._active and self._wanted not in self._failed else None
+        del model
+        gc.collect()
+        # glibc keeps freed heap for reuse; without this the unloaded model's
+        # ~2 GB stays resident and every swap adds more.
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+        if follow is not None:
+            self.request(follow)
+
+    def _open(self, name):
+        if name == BASE_STT:
+            from nano_parakeet import from_pretrained
+
+            model = from_pretrained(model_name=self.model_name, device=self.device)
+            model.transcribe(np.zeros(16000, np.float32))
+            return model
         import onnx_asr
         import onnxruntime as ort
 
+        path = os.path.join(PARAKEET_DIR, name)
+        if not all(os.path.exists(os.path.join(path, f)) for f in PARAKEET_FILES):
+            from huggingface_hub import snapshot_download
+
+            snapshot_download(self._repos[name], local_dir=path, allow_patterns=PARAKEET_FILES)
         options = ort.SessionOptions()
         options.intra_op_num_threads = int(os.environ.get("OMP_NUM_THREADS", "4"))
-        model = onnx_asr.load_model("nemo-canary-1b-v2", quantization="int8", sess_options=options)
-        model.recognize(np.zeros(16000, np.float32), sample_rate=16000, language="en")
+        model = onnx_asr.load_model("nemo-conformer-tdt", path, sess_options=options)
+        model.recognize(np.zeros(16000, np.float32), sample_rate=16000)
         return model
-    except Exception as exc:
-        logger.warning("Canary unavailable, Parakeet transcribes every turn: %r", exc)
-        return None
 
+    def _install(self, name, model):
+        """Swap `model` in; the previous one has no references left after this."""
+        if name == BASE_STT:
+            self.model, self._extra = model, None
+        else:
+            self.model, self._extra = None, model
+        if self.streaming_handler is not None:
+            self.streaming_handler.model = self.model
+        self._active = name
 
-class LanguageForcingSTTHandler(parakeet_tdt_handler.ParakeetTDTSTTHandler):
-    def setup(self, *args, **kwargs) -> None:
-        super().setup(*args, **kwargs)
-        self._voice_languages = {v["id"]: CANARY_LANGUAGES.get(v["language"]) for v in pocket_voices.catalog()}
-        self._canary = _load_canary() if any(self._voice_languages.values()) else None
-        self._forced = None
-        if self._canary:
-            logger.info("Canary STT ready for %s", sorted({c for c in self._voice_languages.values() if c}))
+    def _write_status(self):
+        pocket_voices.write_stt_status({"active": self._active, "loading": self._loading, "failed": sorted(self._failed)})
 
     def process(self, vad_audio):
-        voice = _session_voice(_sessions.get(self.pipeline_index))
-        self._forced = self._voice_languages.get(voice) if self._canary else None
-        # Live captions come from Parakeet, which would caption in whatever
-        # language it guesses; forced turns caption once, from Canary.
-        if self._forced and vad_audio.mode == "progressive":
+        name = self.model_for(_session_voice(_sessions.get(self.pipeline_index)))
+        self.request(name)
+        # Live captions come from the base model only; a fine-tune captions
+        # once, at the end of the turn.
+        progressive = vad_audio.mode == "progressive"
+        if progressive and (name != BASE_STT or self._active != BASE_STT):
             return
-        yield from super().process(vad_audio)
+        with self._state:
+            self._state.wait_for(lambda: self._active == name or name in self._failed, timeout=LOAD_WAIT_S)
+        with self._in_use:
+            if progressive and self._active != BASE_STT:
+                return
+            outputs = list(super().process(vad_audio))
+        yield from outputs
 
     def _process_nano_parakeet(self, audio_input):
-        if not self._forced:
+        if self._active == BASE_STT:
             return super()._process_nano_parakeet(audio_input)
-        # Canary misreads speech cut right at its edges, as VAD segments are;
-        # half a second of silence either side fixes most of it (measured:
-        # "Καίμερα" -> "Καλημέρα", "Ουίση" -> "Πού είσαι").
+        # VAD cuts segments tight to the speech; the fine-tune was measured
+        # with half a second of silence either side.
         pad = np.zeros(8000, np.float32)
-        audio = np.concatenate([pad, audio_input, pad])
-        text = self._canary.recognize(audio, sample_rate=16000, language=self._forced)
-        return text.strip(), self._forced
+        text = self._extra.recognize(np.concatenate([pad, audio_input, pad]), sample_rate=16000).strip()
+        code = self._codes.get(self._active)
+        if code == "el":
+            text = text.replace("?", ";")  # trained on "?"; Greek's question mark is ";"
+        return text, code or self.last_language
 
 
 class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
@@ -179,7 +281,7 @@ class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
 
 
 pocket_tts_handler.PocketTTSHandler = CatalogPocketTTSHandler
-parakeet_tdt_handler.ParakeetTDTSTTHandler = LanguageForcingSTTHandler
+parakeet_tdt_handler.ParakeetTDTSTTHandler = SwappingSTTHandler
 s2s_pipeline.VADHandler = SessionTrackingVADHandler
 
 if __name__ == "__main__":

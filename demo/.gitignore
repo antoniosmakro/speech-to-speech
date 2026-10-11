@@ -19,3 +19,4 @@ venv/
 deploy_replica.py
 
 .env
+parakeet_models/

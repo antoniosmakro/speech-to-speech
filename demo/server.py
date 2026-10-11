@@ -160,9 +160,17 @@ def _voice_options():
     return {
         "default": pocket_voices.default_voice(),
         "options": [
-            {k: v[k] for k in ("id", "name", "description", "language")} for v in pocket_voices.catalog()
+            {**{k: v[k] for k in ("id", "name", "description", "language")}, "stt": pocket_voices.stt_model(v)}
+            for v in pocket_voices.catalog()
         ],
     }
+
+
+@app.get("/api/stt")
+def stt_status():
+    """The speech-recognition model the pipeline has loaded and any it is
+    swapping in, so the page can say it's loading after a voice change."""
+    return pocket_voices.read_stt_status() or {"active": None, "loading": None, "failed": []}
 
 
 @app.get("/api/me")

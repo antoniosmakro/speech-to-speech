@@ -242,6 +242,8 @@ const connField = $("#conn-field");
 const connHint = $("#conn-hint");
 /** @type {HTMLSelectElement} */
 const inputVoice = $("#voice");
+/** @type {HTMLElement} */
+const voiceHint = $("#voice-hint");
 /** @type {HTMLTextAreaElement} */
 const inputInstructions = $("#instructions");
 /** @type {HTMLInputElement} */
@@ -271,6 +273,13 @@ let settings = loadSettings();
 /** Voice id -> the language it speaks, when the deploy reports its voices.
  *  @type {Map<string, string> | null} */
 let voiceLanguages = null;
+/** Voice id -> the speech-recognition model that listens in that voice's
+ *  language (the pipeline keeps one loaded and swaps on a voice change).
+ *  @type {Map<string, string> | null} */
+let voiceStt = null;
+/** Shown under the orb (live states have no caption of their own) and under
+ *  the Voice selector while the pipeline swaps speech models. */
+let sttNotice = "";
 
 // ── Connection target ────────────────────────────────────────────────────────
 // Three modes, decided by the deploy via /api/config:
@@ -372,7 +381,10 @@ function setState(next) {
   circleBtn.disabled = view.disabled;
   circleBtn.className = `circle ${STATE_CLASS[next]}`;
   avatarOrb.onAppState(next);
-  if (next !== "error") setCaption(view.caption);
+  if (next !== "error") {
+    const notice = !view.caption && LIVE_STATES.has(next) ? sttNotice : "";
+    setCaption(view.caption || notice, notice ? "muted" : "");
+  }
 
   const live = LIVE_STATES.has(next);
   orbWrap.classList.toggle("live", live);
@@ -888,6 +900,7 @@ async function fetchConfig() {
 function applyVoiceCatalog(catalog) {
   if (!catalog?.options?.length) return;
   voiceLanguages = new Map(catalog.options.map((v) => [v.id, v.language]));
+  voiceStt = new Map(catalog.options.map((v) => [v.id, v.stt]));
   defaultVoice = voiceLanguages.has(catalog.default) ? catalog.default : catalog.options[0].id;
   /** @type {Map<string, HTMLOptGroupElement>} */
   const groups = new Map();
@@ -906,6 +919,38 @@ function applyVoiceCatalog(catalog) {
   inputVoice.replaceChildren(...groups.values());
   if (!voiceLanguages.has(settings.voice)) settings.voice = defaultVoice;
   inputVoice.value = settings.voice;
+}
+
+/** @param {string} text */
+function setSttNotice(text) {
+  sttNotice = text;
+  voiceHint.textContent = text;
+  voiceHint.hidden = !text;
+  if (LIVE_STATES.has(currentState) && !STATE_VIEWS[currentState].caption) {
+    setCaption(text, text ? "muted" : "");
+  }
+}
+
+let sttWatch = 0;
+
+/** While the pipeline swaps in the speech model for the selected voice (a few
+ *  seconds; a turn spoken meanwhile waits for it), say so. */
+async function watchSttModel() {
+  const wanted = voiceStt?.get(settings.voice);
+  if (!wanted) return;
+  const watch = ++sttWatch;
+  const deadline = Date.now() + 90_000;
+  while (watch === sttWatch && Date.now() < deadline && LIVE_STATES.has(currentState)) {
+    /** @type {{ active: string | null, failed?: string[] } | null} */
+    let status = null;
+    try {
+      status = await (await fetch("api/stt")).json();
+    } catch { /* status unavailable: say nothing */ }
+    if (!status?.active || status.active === wanted || status.failed?.includes(wanted)) break;
+    setSttNotice(`Loading the ${voiceLanguages?.get(settings.voice) ?? "new"} speech model…`);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  if (watch === sttWatch) setSttNotice("");
 }
 
 /**
@@ -1038,6 +1083,7 @@ settingsForm.addEventListener("submit", (event) => {
   // changed connection URL only takes effect on the next restart.
   if (client && LIVE_STATES.has(currentState)) {
     client.updateSession({ voice: settings.voice, instructions: effectiveInstructions() });
+    void watchSttModel();
   }
 });
 
@@ -1437,6 +1483,7 @@ function onClientStatus(status) {
       break;
     case "connected":
       setState("listening");
+      void watchSttModel();
       break;
     case "user-speaking":
       setState("user-speaking");
