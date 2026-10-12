@@ -1423,6 +1423,23 @@ function stopHeartbeat() {
   }
 }
 
+// HF puts the Space to sleep after minutes without an HTTP request, and a call
+// is WebSocket-only, so a live call pings it.
+const KEEP_AWAKE_MS = 60_000;
+let keepAwakeTimer = 0;
+
+function startKeepAwake() {
+  stopKeepAwake();
+  keepAwakeTimer = window.setInterval(() => void fetch("api/ping").catch(() => {}), KEEP_AWAKE_MS);
+}
+
+function stopKeepAwake() {
+  if (keepAwakeTimer) {
+    clearInterval(keepAwakeTimer);
+    keepAwakeTimer = 0;
+  }
+}
+
 /** The server cut the live session: tear down and explain why. */
 async function onLimitReached() {
   const tier = trackedTier;
@@ -1483,6 +1500,7 @@ function onClientStatus(status) {
       break;
     case "connected":
       setState("listening");
+      startKeepAwake();
       void watchSttModel();
       break;
     case "user-speaking":
@@ -1495,7 +1513,9 @@ function onClientStatus(status) {
       setState("ai-speaking");
       break;
     case "closed":
-      // teardown() will move us to idle
+      // Our own teardown closes the client too; any other close is the server
+      // ending the call, which would otherwise leave the page frozen.
+      if (!tearingDown) void onDisconnected();
       break;
     case "error":
       setState("error");
@@ -1503,7 +1523,27 @@ function onClientStatus(status) {
   }
 }
 
+let tearingDown = false;
+
 async function teardown() {
+  tearingDown = true;
+  try {
+    await teardownSession();
+  } finally {
+    tearingDown = false;
+  }
+}
+
+/** The server ended the call (the Space restarted or slept, the pipeline went
+ *  away): reset, and leave a tap-to-restart message instead of a frozen orb. */
+async function onDisconnected(message = "Disconnected — tap to start again") {
+  await teardown();
+  setState("error");
+  setCaption(message, "error");
+}
+
+async function teardownSession() {
+  stopKeepAwake();
   stopHeartbeat();
   stopJoinCountdown();
   endTrackedSession();
@@ -1534,8 +1574,15 @@ async function teardown() {
 /** @param {unknown} err */
 function onFatalError(err) {
   console.error("[main] fatal:", err);
-  setState("error");
   const message = err instanceof Error ? err.message : String(err);
+  // Standard close codes mean the server side went away; codes from 4000 up
+  // carry their own reason for the visitor (sign-in, queue), shown as is.
+  const closed = /^WebSocket closed \((\d+)\)\s*(.*)$/.exec(message);
+  if (closed && Number(closed[1]) < 4000) {
+    void onDisconnected(closed[2] || undefined);
+    return;
+  }
+  setState("error");
   setCaption(truncateError(message), "error");
   void teardown().catch(() => {
     setState("error");

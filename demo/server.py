@@ -166,6 +166,14 @@ def _voice_options():
     }
 
 
+@app.get("/api/ping")
+def ping():
+    """Hit by the page every minute of a conversation: HF puts the Space to
+    sleep after minutes without an HTTP request, and a conversation is
+    WebSocket-only (measured: slept 8 min into a live audio stream)."""
+    return {"ok": True}
+
+
 @app.get("/api/stt")
 def stt_status():
     """The speech-recognition model the pipeline has loaded and any it is
