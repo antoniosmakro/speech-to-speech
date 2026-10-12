@@ -1259,9 +1259,13 @@ async function doStart(audioContext = null) {
   try {
     const me = await (await fetch("api/me")).json();
     if (me.enabled && me.auth && !me.loggedIn) {
-      const framed = window.self !== window.top;
       setState("error");
-      setCaption(framed ? "Sign in required — tap 'Open to sign in' (top right)" : "Sign in (top right) to talk", "error");
+      setCaption(
+        account.signInBlocked
+          ? "Your browser blocks sign-in inside this page — tap 'Open to sign in' (top right)"
+          : "Sign in (top right) to talk",
+        "error",
+      );
       return;
     }
   } catch { /* /api/me unavailable: proceed; the socket will decide */ }
