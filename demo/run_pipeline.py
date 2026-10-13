@@ -26,6 +26,7 @@ from time import perf_counter
 
 import numpy as np
 from speech_to_speech import s2s_pipeline
+from speech_to_speech.LLM import chat_completions_language_model
 from speech_to_speech.pipeline.messages import EndOfResponse
 from speech_to_speech.s2s_pipeline import main
 from speech_to_speech.STT import parakeet_tdt_handler
@@ -280,6 +281,20 @@ class CatalogPocketTTSHandler(pocket_tts_handler.PocketTTSHandler):
         self.model, self.voice_state = self._voices.get(voice, self._default)
 
 
+_llm_warmup = chat_completions_language_model.ChatCompletionsApiModelHandler.warmup
+
+
+def _llm_warmup_or_warn(self) -> None:
+    """A slow or unreachable LLM at boot must not stop the pipeline: HF
+    restarts a crashed app a few times, then parks it in "Runtime error" until
+    someone restarts it by hand, long after the LLM has recovered."""
+    try:
+        _llm_warmup(self)
+    except Exception as exc:
+        logger.warning("LLM warmup failed, starting anyway: %r", exc)
+
+
+chat_completions_language_model.ChatCompletionsApiModelHandler.warmup = _llm_warmup_or_warn
 pocket_tts_handler.PocketTTSHandler = CatalogPocketTTSHandler
 parakeet_tdt_handler.ParakeetTDTSTTHandler = SwappingSTTHandler
 s2s_pipeline.VADHandler = SessionTrackingVADHandler
